@@ -1,0 +1,13 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-slate-950 text-slate-50;
+  }
+}
+
+.glass-panel {
+  @apply bg-slate-900/50 backdrop-blur-md border border-slate-800 rounded-xl;
+}

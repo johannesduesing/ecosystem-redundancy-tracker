@@ -1,0 +1,88 @@
+version: '3'
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: redundancy_tracker
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U postgres -d redundancy_tracker" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    environment:
+      RABBITMQ_ERLANG_COOKIE: "redundancy-tracker-cookie"
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: [ "CMD", "rabbitmq-diagnostics", "check_running" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  maven-central-producer:
+    build: ./maven-central-releases-producer
+    environment:
+      - DB_HOST=postgres
+      - DB_NAME=redundancy_tracker
+      - DB_USER=postgres
+      - DB_PASS=postgres
+      - RABBIT_HOST=rabbitmq
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+
+  maven-central-analyzer:
+    build: ./maven-central-redundancy-analyzer
+    environment:
+      - DB_HOST=postgres
+      - DB_NAME=redundancy_tracker
+      - DB_USER=postgres
+      - DB_PASS=postgres
+      - RABBIT_HOST=rabbitmq
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+
+  redundancy-api-service:
+    build: ./redundancy-api-service
+    ports:
+      - "8080:8080"
+    environment:
+      - DB_HOST=postgres
+      - DB_NAME=redundancy_tracker
+      - DB_USER=postgres
+      - DB_PASS=postgres
+      - RABBIT_HOST=rabbitmq
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  frontend:
+    image: node:20-slim
+    working_dir: /app
+    volumes:
+      - ./frontend:/app
+    ports:
+      - "5173:5173"
+    command: sh -c "npm install && npm run dev"
+    depends_on:
+      - redundancy-api-service
+
+volumes:
+  postgres_data:

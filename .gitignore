@@ -1,0 +1,100 @@
+# =========================
+# Maven / Java / Spring Boot
+# =========================
+
+target/
+*.class
+*.jar
+*.war
+*.ear
+
+# Spring Boot specific logs & temp files
+*.log
+application.properties~
+application.yml~
+.env
+
+# =========================
+# IDEs & Editors
+# =========================
+
+## IntelliJ IDEA
+.idea/
+*.iml
+out/
+
+## Eclipse / STS
+.project
+.classpath
+.settings/
+.springBeans
+
+## VS Code
+.vscode/
+
+## NetBeans 
+nbproject/private/
+build/
+nbbuild/
+dist/
+
+# =========================
+# Operating System Files 
+# =========================
+
+.DS_Store        # macOS Finder metadata  
+Thumbs.db        # Windows image cache  
+ehthumbs.db      
+Desktop.ini      
+
+# =========================
+# Maven Wrapper & Build Cache 
+# (keep wrapper scripts but ignore downloaded binaries)
+# =========================
+
+.mvn/wrapper/maven-wrapper.jar  # optional if you prefer not to commit the JAR; can be kept if CI needs it.
+!mvnw*
+!mvnw.cmd*
+
+# =========================
+# Docker & Compose Artifacts 
+# =========================
+
+**/docker-compose.override.yml  
+**/docker-compose.dev.yml  
+**/.env.docker  
+
+# Ignore local volumes or temporary data mounts (if any)
+volumes/
+data/
+
+# =========================
+# Logs & Temporary Files 
+# =========================
+
+*.log*
+*.tmp*
+*~ 
+
+hs_err_pid*
+replay_pid*
+
+# =========================
+# Node.js / Frontend (React)
+# =========================
+
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# npm/yarn logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Editor/Tools
+.eslintcache
+.stylelintcache
+.prettiercache
