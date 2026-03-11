@@ -99,6 +99,7 @@ public class AnalyzerService {
 
             // --- Step 2: One bulk SELECT for all already-known class files ---
             List<ClassFile> classFiles = batchFindOrCreate(fileInfos);
+            classFileRepository.incrementReleaseCounts(classFiles);
 
             release.setClassFiles(classFiles);
             release.setStatus(ProcessingStatus.READY);

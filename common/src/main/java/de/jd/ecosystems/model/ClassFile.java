@@ -14,7 +14,8 @@ import java.util.List;
 @Entity
 @Table(
     name = "class_file",
-    uniqueConstraints = @UniqueConstraint(name = "uq_class_file_fqn_sha512", columnNames = {"fqn", "sha512"})
+    uniqueConstraints = @UniqueConstraint(name = "uq_class_file_fqn_sha512", columnNames = {"fqn", "sha512"}),
+    indexes = @jakarta.persistence.Index(name = "idx_class_file_release_count", columnList = "release_count")
 )
 public class ClassFile {
 
@@ -30,6 +31,9 @@ public class ClassFile {
 
     @Column(name = "size_bytes", nullable = false)
     private long sizeBytes;
+
+    @Column(name = "release_count", nullable = false)
+    private long releaseCount = 0;
 
     @JsonIgnore
     @ManyToMany(mappedBy = "classFiles")
@@ -68,6 +72,14 @@ public class ClassFile {
 
     public void setSizeBytes(long sizeBytes) {
         this.sizeBytes = sizeBytes;
+    }
+
+    public long getReleaseCount() {
+        return releaseCount;
+    }
+
+    public void setReleaseCount(long releaseCount) {
+        this.releaseCount = releaseCount;
     }
 
     public List<Release> getReleases() {

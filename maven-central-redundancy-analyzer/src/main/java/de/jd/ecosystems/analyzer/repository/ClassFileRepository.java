@@ -2,6 +2,7 @@ package de.jd.ecosystems.analyzer.repository;
 
 import de.jd.ecosystems.model.ClassFile;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -29,4 +30,8 @@ public interface ClassFileRepository extends JpaRepository<ClassFile, Long> {
     List<ClassFile> findAllByFqnAndSha512Pairs(
             @Param("fqns") String[] fqns,
             @Param("sha512s") String[] sha512s);
+
+    @Modifying
+    @Query("UPDATE ClassFile cf SET cf.releaseCount = cf.releaseCount + 1 WHERE cf IN :classFiles")
+    void incrementReleaseCounts(@Param("classFiles") List<ClassFile> classFiles);
 }
