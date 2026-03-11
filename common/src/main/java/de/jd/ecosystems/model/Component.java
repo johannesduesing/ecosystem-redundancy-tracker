@@ -6,13 +6,17 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import jakarta.persistence.Column;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import java.util.List;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "component")
+@Table(
+    name = "component",
+    uniqueConstraints = @UniqueConstraint(name = "uq_component_group_artifact", columnNames = {"groupId", "artifactId"})
+)
 public class Component {
 
     @Id

@@ -4,14 +4,16 @@ public class ClassDiffDTO {
     private Long id;
     private String fqn;
     private String sha512;
+    private long sizeBytes;
 
     public ClassDiffDTO() {
     }
 
-    public ClassDiffDTO(Long id, String fqn, String sha512) {
+    public ClassDiffDTO(Long id, String fqn, String sha512, long sizeBytes) {
         this.id = id;
         this.fqn = fqn;
         this.sha512 = sha512;
+        this.sizeBytes = sizeBytes;
     }
 
     public Long getId() {
@@ -36,5 +38,13 @@ public class ClassDiffDTO {
 
     public void setSha512(String sha512) {
         this.sha512 = sha512;
+    }
+
+    public long getSizeBytes() {
+        return sizeBytes;
+    }
+
+    public void setSizeBytes(long sizeBytes) {
+        this.sizeBytes = sizeBytes;
     }
 }

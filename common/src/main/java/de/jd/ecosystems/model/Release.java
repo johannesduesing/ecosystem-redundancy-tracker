@@ -9,6 +9,7 @@ import jakarta.persistence.ManyToMany;
 import jakarta.persistence.JoinTable;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import jakarta.persistence.Column;
 import java.util.List;
 
@@ -17,7 +18,10 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "release")
+@Table(
+    name = "release",
+    uniqueConstraints = @UniqueConstraint(name = "uq_release_component_version", columnNames = {"component_id", "version"})
+)
 public class Release {
 
     @Id
