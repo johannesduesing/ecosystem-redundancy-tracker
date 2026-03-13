@@ -1,8 +1,16 @@
 import { useState } from 'react'
 import { Routes, Route, Link, useNavigate, useParams } from 'react-router-dom'
-import { Search, Home, CheckCircle2, Clock, XCircle, AlertCircle, ChevronRight, FileCode } from 'lucide-react'
+import { Search, Home, CheckCircle2, Clock, XCircle, AlertCircle, ChevronRight, FileCode, Loader2 } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { fetchComponents, fetchComponentRedundancy, fetchReleaseDiff, fetchReleasesForClass, fetchTopClasses } from './api'
+
+const formatBytes = (bytes) => {
+    if (!bytes || bytes <= 0) return '0 KB'
+    const kb = bytes / 1024
+    if (kb < 1024) return kb.toFixed(1) + ' KB'
+    const mb = kb / 1024
+    return mb.toFixed(1) + ' MB'
+}
 
 function App() {
     return (
@@ -192,7 +200,14 @@ function ComponentPage() {
     const { data: component, isLoading: compLoading, error: compError } = useQuery({
         queryKey: ['component', groupId, artifactId],
         queryFn: () => fetchComponentRedundancy(groupId, artifactId),
-        refetchInterval: (data) => (data?.status === 'PENDING' ? 3000 : false),
+        refetchInterval: (query) => {
+            const data = query.state.data
+            if (!data) return false
+            if (!data.releases) return 3000           // API returned PENDING string — not a component yet
+            if (data.status === 'PENDING') return 3000
+            if (data.releases?.some(r => r.status === 'PENDING')) return 5000
+            return false
+        },
     })
 
     const { data: diff, isLoading: diffLoading } = useQuery({
@@ -212,6 +227,26 @@ function ComponentPage() {
         </div>
     )
 
+    // API returned a 202 string — component exists but releases haven't been discovered yet
+    if (!component.releases) return (
+        <div className="flex flex-col items-center gap-6 py-24 text-center">
+            <Loader2 className="animate-spin text-blue-500" size={56} />
+            <div className="space-y-2">
+                <p className="text-blue-500 font-mono text-sm">{groupId}</p>
+                <h1 className="text-3xl font-extrabold">{artifactId}</h1>
+            </div>
+            <div className="flex items-center gap-2 text-amber-400 bg-amber-400/10 border border-amber-400/30 rounded-lg px-5 py-3 text-sm">
+                <Loader2 className="animate-spin flex-shrink-0" size={15} />
+                Currently being indexed &mdash; discovering releases, please wait&hellip;
+            </div>
+            <p className="text-slate-500 text-sm">This page will update automatically.</p>
+        </div>
+    )
+
+    const hasPendingReleases = component.releases?.some(r => r.status !== 'READY')
+    const selectedRelease = component.releases?.find(r => r.version === selectedVersion)
+    const selectedIsReady = selectedRelease?.status === 'READY'
+
     return (
         <div className="space-y-8">
             <div className="flex flex-col md:flex-row justify-between items-start gap-6">
@@ -221,6 +256,12 @@ function ComponentPage() {
                     <div className="flex items-center gap-4 text-slate-400">
                         <StatusBadge status={component.status} />
                     </div>
+                    {hasPendingReleases && (
+                        <div className="flex items-center gap-2 text-amber-400 bg-amber-400/10 border border-amber-400/30 rounded-lg px-4 py-2 text-sm mt-2">
+                            <Loader2 className="animate-spin flex-shrink-0" size={15} />
+                            Currently being indexed &mdash; some releases may not yet be available
+                        </div>
+                    )}
                 </div>
             </div>
 
@@ -231,18 +272,40 @@ function ComponentPage() {
                     </h2>
                     <div className="glass-panel overflow-hidden">
                         <div className="max-h-[600px] overflow-y-auto divide-y divide-slate-800">
-                            {component.releases?.map((rel) => (
-                                <button
-                                    key={rel.version}
-                                    onClick={() => setSelectedVersion(rel.version)}
-                                    className={`w-full text-left p-4 hover:bg-slate-900 transition-colors flex items-center justify-between group ${selectedVersion === rel.version ? 'bg-blue-500/10 border-r-2 border-blue-500' : ''}`}
-                                >
-                                    <div>
-                                        <span className="font-bold group-hover:text-blue-400 transition-colors">{rel.version}</span>
-                                    </div>
-                                    <ChevronRight size={16} className={`text-slate-600 group-hover:text-blue-500 transition-all ${selectedVersion === rel.version ? 'translate-x-1' : ''}`} />
-                                </button>
-                            ))}
+                            {[...(component.releases ?? [])].sort((a, b) => (a.status === 'READY' ? -1 : 1) - (b.status === 'READY' ? -1 : 1)).map((rel) => {
+                                const isReady = rel.status === 'READY'
+                                const isSelected = selectedVersion === rel.version
+                                return (
+                                    <button
+                                        key={rel.version}
+                                        onClick={() => setSelectedVersion(rel.version)}
+                                        className={`w-full text-left p-4 transition-colors flex items-center justify-between group ${
+                                            isSelected
+                                                ? isReady
+                                                    ? 'bg-blue-500/10 border-r-2 border-blue-500'
+                                                    : 'bg-amber-500/5 border-r-2 border-amber-500/50'
+                                                : 'hover:bg-slate-900'
+                                        }`}
+                                    >
+                                        <div className="flex flex-col gap-0.5">
+                                            <span className={`font-mono text-sm transition-colors ${
+                                                isReady
+                                                    ? 'font-bold group-hover:text-blue-400'
+                                                    : 'line-through text-slate-500'
+                                            }`}>
+                                                {rel.version}
+                                            </span>
+                                            {!isReady && (
+                                                <span className="text-xs text-amber-500/70">{rel.status}</span>
+                                            )}
+                                        </div>
+                                        {isReady
+                                            ? <ChevronRight size={16} className={`text-slate-600 group-hover:text-blue-500 transition-all ${isSelected ? 'translate-x-1' : ''}`} />
+                                            : <Clock size={14} className="text-amber-500/50 flex-shrink-0" />
+                                        }
+                                    </button>
+                                )
+                            })}
                         </div>
                     </div>
                 </div>
@@ -250,11 +313,28 @@ function ComponentPage() {
                 <div className="lg:col-span-2 space-y-4">
                     <h2 className="text-xl font-bold flex items-center gap-2">
                         <FileCode className="text-blue-500" size={20} /> Release Investigation
+                        {diff?.previousVersion && (
+                            <span className="text-sm font-normal text-slate-500 ml-2">
+                                (Compared against <span className="font-mono text-slate-400">{diff.previousVersion}</span>)
+                            </span>
+                        )}
                     </h2>
 
                     {!selectedVersion ? (
                         <div className="glass-panel p-24 text-center text-slate-500 flex flex-col items-center gap-4">
                             <p>Select a version from the left to investigate changes and redundancy.</p>
+                        </div>
+                    ) : !selectedIsReady ? (
+                        <div className="glass-panel p-16 flex flex-col items-center gap-5 text-center border border-amber-500/20">
+                            <Loader2 className="animate-spin text-amber-400" size={40} />
+                            <div className="space-y-2">
+                                <h3 className="font-bold text-lg">Not yet available</h3>
+                                <p className="text-slate-400 text-sm max-w-xs">
+                                    Release <span className="font-mono text-slate-300">{selectedVersion}</span> is currently being indexed.
+                                    Check back shortly once indexing is complete.
+                                </p>
+                            </div>
+                            <StatusBadge status={selectedRelease?.status} />
                         </div>
                     ) : diffLoading ? (
                         <div className="glass-panel p-24 text-center text-blue-500">
@@ -263,11 +343,46 @@ function ComponentPage() {
                         </div>
                     ) : diff ? (
                         <div className="space-y-6">
-                            <div className="grid grid-cols-3 gap-4">
-                                <MetricCard label="Added" value={diff.added?.length || 0} color="text-green-500" />
-                                <MetricCard label="Modified" value={diff.modified?.length || 0} color="text-yellow-500" />
-                                <MetricCard label="Removed" value={diff.removed?.length || 0} color="text-red-500" />
+                            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+                                <MetricCard 
+                                    label="Total Classes" 
+                                    value={diff.totalClasses || 0} 
+                                    color="text-blue-500" 
+                                    subValue={formatBytes(diff.totalSizeBytes)}
+                                />
+                                <MetricCard 
+                                    label="Added" 
+                                    value={diff.added?.length || 0} 
+                                    color="text-green-500" 
+                                    quota={diff.totalSizeBytes > 0 ? (diff.addedSizeBytes / diff.totalSizeBytes * 100).toFixed(1) : 0}
+                                    quotaLabel="Addition Quota"
+                                    subValue={formatBytes(diff.addedSizeBytes)}
+                                />
+                                <MetricCard 
+                                    label="Modified" 
+                                    value={diff.modified?.length || 0} 
+                                    color="text-yellow-500" 
+                                    quota={diff.totalSizeBytes > 0 ? (diff.modifiedSizeBytes / diff.totalSizeBytes * 100).toFixed(1) : 0}
+                                    quotaLabel="Modification Quota"
+                                    subValue={formatBytes(diff.modifiedSizeBytes)}
+                                />
+                                <MetricCard 
+                                    label="Unmodified" 
+                                    value={(diff.totalClasses || 0) - (diff.added?.length || 0) - (diff.modified?.length || 0)} 
+                                    color="text-slate-300" 
+                                    quota={diff.totalSizeBytes > 0 ? ((diff.totalSizeBytes - diff.addedSizeBytes - diff.modifiedSizeBytes) / diff.totalSizeBytes * 100).toFixed(1) : 0}
+                                    quotaLabel="Unmodified Quota"
+                                    subValue={formatBytes(diff.totalSizeBytes - diff.addedSizeBytes - diff.modifiedSizeBytes)}
+                                />
+                                <MetricCard 
+                                    label="Removed" 
+                                    value={diff.removed?.length || 0} 
+                                    color="text-red-500" 
+                                    subValue={formatBytes(diff.removedSizeBytes)}
+                                />
                             </div>
+
+                            <QuotaBar diff={diff} />
 
                             <div className="glass-panel p-6 space-y-6">
                                 <DiffSection title="Added Classes" classes={diff.added} color="bg-green-500" />
@@ -305,13 +420,56 @@ function DiffSection({ title, classes, color }) {
     )
 }
 
-function MetricCard({ label, value, color }) {
+function MetricCard({ label, value, color, quota, quotaLabel, subValue }) {
     return (
-        <div className="glass-panel p-4 text-center">
-            <p className="text-slate-500 text-xs uppercase tracking-wider font-semibold mb-1">{label}</p>
+        <div className="glass-panel p-4 text-center group">
+            <p className="text-slate-500 text-[10px] uppercase tracking-wider font-semibold mb-1">{label}</p>
             <p className={`text-3xl font-bold ${color}`}>{value}</p>
+            {subValue && (
+                <p className="text-[10px] text-slate-400 mt-1 font-mono">{subValue}</p>
+            )}
+            {quota !== undefined && (
+                <div className="mt-3 pt-3 border-t border-slate-800/50">
+                    <p className="text-slate-500 text-[9px] uppercase tracking-tight mb-0.5">{quotaLabel}</p>
+                    <p className="text-sm font-mono text-slate-300">{quota}%</p>
+                </div>
+            )}
         </div>
     )
+}
+
+function QuotaBar({ diff }) {
+    if (!diff || !diff.totalSizeBytes) return null;
+
+    const addedPct = (diff.addedSizeBytes / diff.totalSizeBytes) * 100;
+    const modifiedPct = (diff.modifiedSizeBytes / diff.totalSizeBytes) * 100;
+    const unmodifiedPct = 100 - addedPct - modifiedPct;
+
+    return (
+        <div className="w-full h-8 flex rounded-md overflow-hidden bg-slate-900 border border-slate-800 shadow-inner">
+            <div 
+                className="h-full bg-green-500 transition-all duration-500 relative group"
+                style={{ width: `${addedPct}%` }}
+                title={`Added: ${addedPct.toFixed(1)}%`}
+            >
+                {addedPct > 10 && <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-slate-950 uppercase">Added</span>}
+            </div>
+            <div 
+                className="h-full bg-yellow-500 transition-all duration-500 relative group"
+                style={{ width: `${modifiedPct}%` }}
+                title={`Modified: ${modifiedPct.toFixed(1)}%`}
+            >
+                {modifiedPct > 10 && <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-slate-950 uppercase">Modified</span>}
+            </div>
+            <div 
+                className="h-full bg-slate-400 transition-all duration-500 relative group"
+                style={{ width: `${unmodifiedPct}%` }}
+                title={`Unmodified: ${unmodifiedPct.toFixed(1)}%`}
+            >
+                {unmodifiedPct > 10 && <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-slate-950 uppercase">Same</span>}
+            </div>
+        </div>
+    );
 }
 
 function ClassPage() {

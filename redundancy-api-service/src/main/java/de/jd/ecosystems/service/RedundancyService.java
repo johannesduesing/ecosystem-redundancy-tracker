@@ -212,16 +212,23 @@ public class RedundancyService {
         diff.setVersion(version);
         diff.setPreviousVersion(previousVersion);
         diff.setTotalClasses(currentRelease.getClassFiles().size());
+        diff.setTotalSizeBytes(currentRelease.getClassFiles().stream().mapToLong(ClassFile::getSizeBytes).sum());
         diff.setAdded(new ArrayList<>());
+        diff.setAddedSizeBytes(0);
         diff.setRemoved(new ArrayList<>());
+        diff.setRemovedSizeBytes(0);
         diff.setModified(new ArrayList<>());
+        diff.setModifiedSizeBytes(0);
 
         Map<String, ClassFile> currentClasses = currentRelease.getClassFiles().stream()
                 .collect(Collectors.toMap(ClassFile::getFqn, cf -> cf));
 
         if (previousRelease == null) {
             // All classes are "added" if it's the first release
-            currentClasses.forEach((fqn, cf) -> diff.getAdded().add(new ClassDiffDTO(cf.getId(), fqn, cf.getSha512())));
+            currentClasses.forEach((fqn, cf) -> {
+                diff.getAdded().add(new ClassDiffDTO(cf.getId(), fqn, cf.getSha512(), cf.getSizeBytes()));
+                diff.setAddedSizeBytes(diff.getAddedSizeBytes() + cf.getSizeBytes());
+            });
         } else {
             Map<String, ClassFile> previousClasses = previousRelease.getClassFiles().stream()
                     .collect(Collectors.toMap(ClassFile::getFqn, cf -> cf));
@@ -229,17 +236,20 @@ public class RedundancyService {
             // Added: In current, not in previous
             currentClasses.forEach((fqn, cf) -> {
                 if (!previousClasses.containsKey(fqn)) {
-                    diff.getAdded().add(new ClassDiffDTO(cf.getId(), fqn, cf.getSha512()));
+                    diff.getAdded().add(new ClassDiffDTO(cf.getId(), fqn, cf.getSha512(), cf.getSizeBytes()));
+                    diff.setAddedSizeBytes(diff.getAddedSizeBytes() + cf.getSizeBytes());
                 } else if (!previousClasses.get(fqn).getSha512().equals(cf.getSha512())) {
                     // Modified: In both, but different hash
-                    diff.getModified().add(new ClassDiffDTO(cf.getId(), fqn, cf.getSha512()));
+                    diff.getModified().add(new ClassDiffDTO(cf.getId(), fqn, cf.getSha512(), cf.getSizeBytes()));
+                    diff.setModifiedSizeBytes(diff.getModifiedSizeBytes() + cf.getSizeBytes());
                 }
             });
 
             // Removed: In previous, not in current
             previousClasses.forEach((fqn, cf) -> {
                 if (!currentClasses.containsKey(fqn)) {
-                    diff.getRemoved().add(new ClassDiffDTO(cf.getId(), fqn, cf.getSha512()));
+                    diff.getRemoved().add(new ClassDiffDTO(cf.getId(), fqn, cf.getSha512(), cf.getSizeBytes()));
+                    diff.setRemovedSizeBytes(diff.getRemovedSizeBytes() + cf.getSizeBytes());
                 }
             });
         }

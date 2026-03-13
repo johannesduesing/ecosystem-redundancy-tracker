@@ -7,6 +7,6 @@ import java.util.Optional;
 public interface ClassFileRepository extends JpaRepository<ClassFile, Long> {
     Optional<ClassFile> findByFqn(String fqn);
 
-    @org.springframework.data.jpa.repository.Query("SELECT cf FROM ClassFile cf ORDER BY size(cf.releases) DESC")
+    @org.springframework.data.jpa.repository.Query("SELECT cf FROM ClassFile cf ORDER BY cf.releaseCount DESC")
     java.util.List<ClassFile> findTop10ByReleaseCount(org.springframework.data.domain.Pageable pageable);
 }

@@ -21,8 +21,12 @@ import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HexFormat;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
@@ -82,18 +86,20 @@ public class AnalyzerService {
         try (InputStream jarStream = mavenClient.downloadJar(groupId, artifactId, version);
                 ZipInputStream zipStream = new ZipInputStream(jarStream)) {
 
-            List<ClassFile> classFiles = new ArrayList<>();
+            // --- Step 1: Collect all (fqn -> sha512, size) pairs from the JAR in memory ---
+            // This avoids issuing any DB query inside the hot loop.
+            List<ClassFileInfo> fileInfos = new ArrayList<>();
             ZipEntry entry;
             while ((entry = zipStream.getNextEntry()) != null) {
                 if (!entry.isDirectory() && entry.getName().endsWith(".class")) {
                     byte[] content = zipStream.readAllBytes();
-                    String sha512 = computeSha512(content);
-                    String fqn = entry.getName();
-
-                    ClassFile classFile = findOrCreateClassFile(fqn, sha512);
-                    classFiles.add(classFile);
+                    fileInfos.add(new ClassFileInfo(entry.getName(), computeSha512(content), content.length));
                 }
             }
+
+            // --- Step 2: One bulk SELECT for all already-known class files ---
+            List<ClassFile> classFiles = batchFindOrCreate(fileInfos);
+            classFileRepository.incrementReleaseCounts(classFiles);
 
             release.setClassFiles(classFiles);
             release.setStatus(ProcessingStatus.READY);
@@ -103,26 +109,67 @@ public class AnalyzerService {
 
         } catch (FileNotFoundException e) {
             System.err.println("Artifact not found: " + groupId + ":" + artifactId + ":" + version);
-            release.setStatus(ProcessingStatus.NOT_FOUND);
-            release.setLastModified(LocalDateTime.now());
-            releaseRepository.save(release);
+            Release rel = releaseOpt.get();
+            rel.setStatus(ProcessingStatus.NOT_FOUND);
+            rel.setLastModified(LocalDateTime.now());
+            releaseRepository.save(rel);
         } catch (Exception e) {
             e.printStackTrace();
-            release.setStatus(ProcessingStatus.FAILED);
-            release.setLastModified(LocalDateTime.now());
-            releaseRepository.save(release);
+            Release rel = releaseOpt.get();
+            rel.setStatus(ProcessingStatus.FAILED);
+            rel.setLastModified(LocalDateTime.now());
+            releaseRepository.save(rel);
         }
     }
 
-    private ClassFile findOrCreateClassFile(String fqn, String sha512) {
-        return classFileRepository.findByFqnAndSha512(fqn, sha512)
-                .orElseGet(() -> {
-                    ClassFile cf = new ClassFile();
-                    cf.setFqn(fqn);
-                    cf.setSha512(sha512);
-                    return classFileRepository.save(cf);
-                });
+    /**
+     * Fetches all already-known ClassFile rows matching the provided (fqn, sha512)
+     * pairs in a SINGLE bulk SELECT, then inserts the genuinely new ones via
+     * saveAll() (which Hibernate batches into groups based on jdbc.batch_size).
+     *
+     * Before this change: N individual SELECTs per JAR (one per .class entry).
+     * After this change: 1 SELECT + at most 1 batched INSERT statement group.
+     */
+    private List<ClassFile> batchFindOrCreate(List<ClassFileInfo> fileInfos) {
+        if (fileInfos.isEmpty()) {
+            return new ArrayList<>();
+        }
+
+        String[] fqns = fileInfos.stream().map(ClassFileInfo::fqn).toArray(String[]::new);
+        String[] sha512s = fileInfos.stream().map(ClassFileInfo::sha512).toArray(String[]::new);
+
+        // One bulk SELECT — uses the uq_class_file_fqn_sha512 index
+        List<ClassFile> existing = classFileRepository.findAllByFqnAndSha512Pairs(fqns, sha512s);
+
+        // Build a lookup key so we can detect which entries are already persisted
+        Map<String, ClassFile> existingByKey = existing.stream()
+                .collect(Collectors.toMap(
+                        cf -> cf.getFqn() + "|" + cf.getSha512(),
+                        Function.identity()));
+
+        // Determine genuinely new class files
+        List<ClassFile> toInsert = new ArrayList<>();
+        for (ClassFileInfo info : fileInfos) {
+            String key = info.fqn() + "|" + info.sha512();
+            if (!existingByKey.containsKey(key)) {
+                ClassFile cf = new ClassFile();
+                cf.setFqn(info.fqn());
+                cf.setSha512(info.sha512());
+                cf.setSizeBytes(info.size());
+                toInsert.add(cf);
+            }
+        }
+
+        // Batched INSERT — Hibernate groups these per jdbc.batch_size
+        List<ClassFile> inserted = classFileRepository.saveAll(toInsert);
+
+        // Combine existing + newly inserted for the full result
+        List<ClassFile> all = new ArrayList<>(existing);
+        all.addAll(inserted);
+        return all;
     }
+
+    private record ClassFileInfo(String fqn, String sha512, long size) {}
 
     private String computeSha512(byte[] content) throws NoSuchAlgorithmException {
         MessageDigest digest = MessageDigest.getInstance("SHA-512");
