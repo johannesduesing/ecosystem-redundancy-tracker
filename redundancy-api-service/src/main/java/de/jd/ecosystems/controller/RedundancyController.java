@@ -81,8 +81,20 @@ public class RedundancyController {
         return ResponseEntity.ok(service.getReleaseDiff(groupId, artifactId, version));
     }
 
+    @GetMapping("/classes/revisions")
+    public ResponseEntity<?> getClassRevisions(@RequestParam("fqn") String fqn, Pageable pageable) {
+        return ResponseEntity.ok(service.getClassRevisions(fqn, pageable));
+    }
+
     @GetMapping("/classes/{id}/releases")
     public ResponseEntity<?> getReleasesByClassId(@PathVariable("id") Long id, Pageable pageable) {
         return ResponseEntity.ok(service.getReleasesForClass(id, pageable));
+    }
+
+    @GetMapping("/classes/{id}")
+    public ResponseEntity<de.jd.ecosystems.model.ClassFile> getClassFile(@PathVariable("id") Long id) {
+        return service.getClassFileById(id)
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
     }
 }

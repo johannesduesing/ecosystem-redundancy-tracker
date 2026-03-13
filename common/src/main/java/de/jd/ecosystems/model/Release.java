@@ -43,6 +43,7 @@ public class Release {
     @JoinColumn(name = "component_id", nullable = false)
     private Component component;
 
+    @JsonIgnore
     @ManyToMany
     @JoinTable(name = "release_class_files", joinColumns = @JoinColumn(name = "release_id"), inverseJoinColumns = @JoinColumn(name = "class_file_id"))
     private List<ClassFile> classFiles;

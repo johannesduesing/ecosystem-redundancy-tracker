@@ -11,6 +11,7 @@ import de.jd.ecosystems.repository.ReleaseRepository;
 import de.jd.ecosystems.repository.ClassFileRepository;
 import de.jd.ecosystems.dto.ClassDiffDTO;
 import de.jd.ecosystems.dto.ReleaseDiffDTO;
+import de.jd.ecosystems.dto.ComponentListDTO;
 import de.jd.ecosystems.util.VersionUtils;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.data.domain.Page;
@@ -97,19 +98,24 @@ public class RedundancyService {
     }
 
     @Transactional(readOnly = true)
-    public Page<Component> getComponents(Optional<List<ProcessingStatus>> statuses, Pageable pageable) {
+    public Page<ComponentListDTO> getComponents(Optional<List<ProcessingStatus>> statuses, Pageable pageable) {
         // Enforce max page size of 50
         int pageSize = Math.min(pageable.getPageSize(), 50);
         Pageable cappedPageable = PageRequest.of(pageable.getPageNumber(), pageSize, pageable.getSort());
 
+        Page<Component> componentPage;
         if (statuses.isPresent() && !statuses.get().isEmpty()) {
             List<ProcessingStatus> statusList = statuses.get();
             if (statusList.size() == 1) {
-                return componentRepository.findByStatus(statusList.get(0), cappedPageable);
+                componentPage = componentRepository.findByStatus(statusList.get(0), cappedPageable);
+            } else {
+                componentPage = componentRepository.findByStatusIn(statusList, cappedPageable);
             }
-            return componentRepository.findByStatusIn(statusList, cappedPageable);
+        } else {
+            componentPage = componentRepository.findAll(cappedPageable);
         }
-        return componentRepository.findAll(cappedPageable);
+
+        return componentPage.map(ComponentListDTO::new);
     }
 
     public ProcessingStatus getReleaseChangesStatus(String groupId, String artifactId, String version) {
@@ -179,12 +185,23 @@ public class RedundancyService {
     }
 
     @Transactional(readOnly = true)
+    public Optional<ClassFile> getClassFileById(Long id) {
+        return classFileRepository.findById(id);
+    }
+
+    @Transactional(readOnly = true)
     public List<Release> getClassOccurrences(String fqn) {
-        Optional<ClassFile> classFile = classFileRepository.findByFqn(fqn);
-        if (classFile.isEmpty()) {
+        // Find ALL class files with this FQN, and collect all their releases
+        List<ClassFile> classFiles = classFileRepository.findByFqn(fqn, Pageable.unpaged()).getContent();
+        if (classFiles.isEmpty()) {
             return List.of();
         }
-        return classFile.get().getReleases();
+        return classFiles.stream().flatMap(cf -> cf.getReleases().stream()).collect(Collectors.toList());
+    }
+
+    @Transactional(readOnly = true)
+    public Page<ClassFile> getClassRevisions(String fqn, Pageable pageable) {
+        return classFileRepository.findByFqn(fqn, pageable);
     }
 
     @Transactional(readOnly = true)
