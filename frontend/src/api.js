@@ -30,6 +30,16 @@ export const fetchReleasesForClass = async (id, page = 0, size = 10) => {
     return response.data
 }
 
+export const fetchClassDetails = async (id) => {
+    const response = await api.get(`/classes/${id}`)
+    return response.data
+}
+
+export const fetchClassRevisions = async (fqn, page = 0, size = 30, sort = 'releaseCount,desc') => {
+    const response = await api.get(`/classes/revisions`, { params: { fqn, page, size, sort } })
+    return response.data
+}
+
 export const fetchTopClasses = async () => {
     const response = await api.get('/top-classes')
     return response.data
