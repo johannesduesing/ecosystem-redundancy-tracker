@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { Routes, Route, Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Search, Home, CheckCircle2, Clock, XCircle, AlertCircle, ChevronRight, FileCode, Loader2, BarChart3 } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
@@ -297,6 +297,9 @@ function TopClassesList() {
 function LifetimeChart({ data }) {
     if (!data || data.length === 0) return null
 
+    const [hoverIndex, setHoverIndex] = useState(null)
+    const svgRef = useRef(null)
+
     const margin = { top: 20, right: 30, bottom: 30, left: 50 }
     const width = 1200
     const height = 180
@@ -313,14 +316,41 @@ function LifetimeChart({ data }) {
         return data.map((d, i) => `${i === 0 ? 'M' : 'L'} ${xScale(i)} ${yScale(d[key])}`).join(' ')
     }
 
+    const handleMouseMove = (e) => {
+        if (!svgRef.current) return
+        const svg = svgRef.current
+        const CTM = svg.getScreenCTM()
+        const x = (e.clientX - CTM.e) / CTM.a - margin.left
+
+        if (x < -20 || x > innerWidth + 20) {
+            setHoverIndex(null)
+            return
+        }
+
+        const step = innerWidth / (data.length - 1 || 1)
+        const index = Math.round(Math.max(0, Math.min(innerWidth, x)) / step)
+        if (index >= 0 && index < data.length) {
+            setHoverIndex(index)
+        } else {
+            setHoverIndex(null)
+        }
+    }
+
+    const hoveredData = hoverIndex !== null ? data[hoverIndex] : null
+
     return (
         <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             className="glass-panel p-4 overflow-hidden border-cyan-500/10"
         >
-            <div className="relative w-full">
-                <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-auto overflow-visible">
+            <div className="relative w-full" onMouseLeave={() => setHoverIndex(null)}>
+                <svg
+                    ref={svgRef}
+                    viewBox={`0 0 ${width} ${height}`}
+                    className="w-full h-auto overflow-visible cursor-crosshair"
+                    onMouseMove={handleMouseMove}
+                >
                     <g transform={`translate(${margin.left}, ${margin.top})`}>
                         {/* Grid Lines */}
                         {[0, 0.25, 0.5, 0.75, 1].map(v => (
@@ -405,6 +435,58 @@ function LifetimeChart({ data }) {
                                 )}
                             </g>
                         ))}
+
+                        {/* Vertical Hover Line */}
+                        {hoverIndex !== null && (
+                            <line
+                                x1={xScale(hoverIndex)}
+                                y1={0}
+                                x2={xScale(hoverIndex)}
+                                y2={innerHeight}
+                                className="stroke-cyan-500/50"
+                                strokeWidth="1"
+                                strokeDasharray="4 2"
+                            />
+                        )}
+
+                        {/* Tooltip */}
+                        <AnimatePresence>
+                            {hoverIndex !== null && hoveredData && (
+                                <motion.g
+                                    initial={{ opacity: 0, scale: 0.9 }}
+                                    animate={{ opacity: 1, scale: 1 }}
+                                    exit={{ opacity: 0, scale: 0.9 }}
+                                    transition={{ duration: 0.1 }}
+                                    transform={`translate(${xScale(hoverIndex) + (hoverIndex > data.length / 2 ? -220 : 20)}, 0)`}
+                                >
+                                    <rect
+                                        width="200"
+                                        height="120"
+                                        rx="12"
+                                        className="fill-neutral-900/95 stroke-cyan-500/40 backdrop-blur-xl shadow-2xl"
+                                    />
+                                    <text x="15" y="30" className="fill-white font-black text-[14px]">{hoveredData.version}</text>
+
+                                    <g transform="translate(15, 55)">
+                                        <circle r="4" className="fill-green-500" />
+                                        <text x="12" y="4" className="fill-neutral-300 text-[12px]">Added: <tspan className="fill-green-400 font-bold">{hoveredData.addedCount}</tspan></text>
+                                    </g>
+
+                                    <g transform="translate(15, 75)">
+                                        <circle r="4" className="fill-yellow-500" />
+                                        <text x="12" y="4" className="fill-neutral-300 text-[12px]">Modified: <tspan className="fill-yellow-400 font-bold">{hoveredData.modifiedCount}</tspan></text>
+                                    </g>
+
+                                    <g transform="translate(15, 95)">
+                                        <circle r="4" className="fill-red-500" />
+                                        <text x="12" y="4" className="fill-neutral-300 text-[12px]">Removed: <tspan className="fill-red-400 font-bold">{hoveredData.removedCount}</tspan></text>
+                                    </g>
+
+                                    <line x1="15" y1="105" x2="185" y2="105" className="stroke-neutral-800" strokeWidth="1" />
+                                    <text x="15" y="114" className="fill-neutral-500 text-[10px] font-mono uppercase tracking-tighter">Total Classes: {hoveredData.totalCount}</text>
+                                </motion.g>
+                            )}
+                        </AnimatePresence>
                     </g>
                 </svg>
             </div>
@@ -490,7 +572,7 @@ function ComponentPage() {
     return (
         <div className="space-y-8">
             <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-8 pb-8 border-b border-neutral-800">
-                <div className="space-y-4 flex-1">
+                <div className="space-y-4 flex-0" style={{ minWidth: "300px" }}>
                     <div className="space-y-1">
                         <p className="text-cyan-500 font-mono text-xs">{groupId}</p>
                         <h1 className="text-4xl font-black tracking-tight">{artifactId}</h1>
@@ -513,7 +595,7 @@ function ComponentPage() {
                 </div>
 
                 {historyData && !loadingHistory && (
-                    <div className="w-full max-w-6xl">
+                    <div className="space-y-4 flex-1">
                         <LifetimeChart data={historyData} />
                     </div>
                 )}
