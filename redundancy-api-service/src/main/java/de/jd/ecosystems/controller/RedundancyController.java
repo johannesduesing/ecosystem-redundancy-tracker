@@ -32,6 +32,13 @@ public class RedundancyController {
         return ResponseEntity.ok(service.getComponents(Optional.ofNullable(status), pageable));
     }
 
+    @GetMapping("/components/{groupId}/{artifactId}/exists")
+    public ResponseEntity<Boolean> checkComponentExists(@PathVariable("groupId") String groupId,
+            @PathVariable("artifactId") String artifactId) {
+        boolean exists = service.checkComponentExistsOnMavenCentral(groupId, artifactId);
+        return ResponseEntity.ok(exists);
+    }
+
     @GetMapping("/top-classes")
     public ResponseEntity<List<de.jd.ecosystems.model.ClassFile>> getTopClasses() {
         return ResponseEntity.ok(service.getTopClassFiles());
@@ -77,8 +84,9 @@ public class RedundancyController {
     @GetMapping("/releases/{groupId}/{artifactId}/{version}/diff")
     public ResponseEntity<ReleaseDiffDTO> getReleaseDiff(@PathVariable("groupId") String groupId,
             @PathVariable("artifactId") String artifactId,
-            @PathVariable("version") String version) {
-        return ResponseEntity.ok(service.getReleaseDiff(groupId, artifactId, version));
+            @PathVariable("version") String version,
+            @RequestParam(required = false) String baseVersion) {
+        return ResponseEntity.ok(service.getReleaseDiff(groupId, artifactId, version, baseVersion));
     }
 
     @GetMapping("/classes/revisions")

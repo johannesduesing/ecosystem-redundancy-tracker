@@ -205,25 +205,36 @@ public class RedundancyService {
     }
 
     @Transactional(readOnly = true)
-    public ReleaseDiffDTO getReleaseDiff(String groupId, String artifactId, String version) {
+    public ReleaseDiffDTO getReleaseDiff(String groupId, String artifactId, String version, String baseVersion) {
         Component component = componentRepository.findByGroupIdAndArtifactId(groupId, artifactId)
                 .orElseThrow(() -> new IllegalArgumentException("Component not found"));
 
         List<Release> allReleases = releaseRepository.findByComponent(component);
-        List<String> sortedVersions = VersionUtils.sortVersions(
-                allReleases.stream().map(Release::getVersion).collect(Collectors.toList()));
-
-        int currentIndex = sortedVersions.indexOf(version);
-        if (currentIndex < 0) {
-            throw new IllegalArgumentException("Version not found for component");
-        }
-
+        
         Release currentRelease = allReleases.stream()
-                .filter(r -> r.getVersion().equals(version)).findFirst().get();
+                .filter(r -> r.getVersion().equals(version)).findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Target version not found for component"));
 
-        String previousVersion = (currentIndex > 0) ? sortedVersions.get(currentIndex - 1) : null;
-        Release previousRelease = (previousVersion != null) ? allReleases.stream()
-                .filter(r -> r.getVersion().equals(previousVersion)).findFirst().orElse(null) : null;
+        String previousVersion = null;
+        Release previousRelease = null;
+
+        if (baseVersion != null && !baseVersion.isBlank()) {
+            previousRelease = allReleases.stream()
+                    .filter(r -> r.getVersion().equals(baseVersion)).findFirst()
+                    .orElseThrow(() -> new IllegalArgumentException("Baseline version not found for component"));
+            previousVersion = baseVersion;
+        } else {
+            List<String> sortedVersions = VersionUtils.sortVersions(
+                    allReleases.stream().map(Release::getVersion).collect(Collectors.toList()));
+
+            int currentIndex = sortedVersions.indexOf(version);
+            if (currentIndex > 0) {
+                previousVersion = sortedVersions.get(currentIndex - 1);
+                String finalPreviousVersion = previousVersion;
+                previousRelease = allReleases.stream()
+                        .filter(r -> r.getVersion().equals(finalPreviousVersion)).findFirst().orElse(null);
+            }
+        }
 
         ReleaseDiffDTO diff = new ReleaseDiffDTO();
         diff.setVersion(version);
@@ -241,7 +252,7 @@ public class RedundancyService {
                 .collect(Collectors.toMap(ClassFile::getFqn, cf -> cf));
 
         if (previousRelease == null) {
-            // All classes are "added" if it's the first release
+            // All classes are "added" if it's the first release or no baseline found
             currentClasses.forEach((fqn, cf) -> {
                 diff.getAdded().add(new ClassDiffDTO(cf.getId(), fqn, cf.getSha512(), cf.getSizeBytes()));
                 diff.setAddedSizeBytes(diff.getAddedSizeBytes() + cf.getSizeBytes());
@@ -277,6 +288,23 @@ public class RedundancyService {
     private void queueComponentAnalysisTask(String groupId, String artifactId) {
         ComponentAnalysisRequest request = new ComponentAnalysisRequest(groupId, artifactId);
         rabbitTemplate.convertAndSend("maven-central-component-analysis", request);
+    }
+
+    public boolean checkComponentExistsOnMavenCentral(String groupId, String artifactId) {
+        try {
+            String groupPath = groupId.replace('.', '/');
+            String urlString = String.format("https://repo1.maven.org/maven2/%s/%s/maven-metadata.xml", groupPath, artifactId);
+            java.net.URL url = new java.net.URL(urlString);
+            java.net.HttpURLConnection connection = (java.net.HttpURLConnection) url.openConnection();
+            connection.setRequestMethod("HEAD");
+            connection.setConnectTimeout(5000);
+            connection.setReadTimeout(5000);
+            
+            int responseCode = connection.getResponseCode();
+            return responseCode == 200;
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     private void queueReleaseAnalysisTask(String groupId, String artifactId, String version) {

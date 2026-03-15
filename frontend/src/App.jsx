@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Routes, Route, Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Search, Home, CheckCircle2, Clock, XCircle, AlertCircle, ChevronRight, FileCode, Loader2 } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
-import { fetchComponents, fetchComponentRedundancy, fetchReleaseDiff, fetchReleasesForClass, fetchTopClasses, fetchClassDetails, fetchClassRevisions } from './api'
+import { fetchComponents, fetchComponentRedundancy, fetchReleaseDiff, fetchReleasesForClass, fetchTopClasses, fetchClassDetails, fetchClassRevisions, checkComponentExists } from './api'
 
 const formatBytes = (bytes) => {
     if (!bytes || bytes <= 0) return '0 KB'
@@ -130,19 +130,41 @@ function StatusBadge({ status }) {
 
 function HomePage() {
     const [search, setSearch] = useState('')
+    const [toast, setToast] = useState(null)
+    const [verifying, setVerifying] = useState(false)
     const navigate = useNavigate()
 
     const { data, isLoading, error } = useQuery({
         queryKey: ['components'],
-        queryFn: () => fetchComponents(['PENDING', 'READY']),
+        queryFn: () => fetchComponents(['PENDING', 'READY'], 0, 6, 'lastModified,desc'),
         refetchInterval: 5000,
     })
 
-    const handleSearch = (e) => {
+    const handleSearch = async (e) => {
         e.preventDefault()
-        if (!search.includes(':')) return
-        const [groupId, artifactId] = search.split(':')
-        navigate(`/component/${groupId}/${artifactId}`)
+        const parts = search.split(':')
+        if (parts.length !== 2 || !parts[0].trim() || !parts[1].trim()) {
+            setToast('Input is not a valid component name.')
+            setTimeout(() => setToast(null), 3000)
+            return
+        }
+        const [groupId, artifactId] = parts.map(p => p.trim())
+        
+        setVerifying(true)
+        try {
+            const exists = await checkComponentExists(groupId, artifactId)
+            if (!exists) {
+                setToast('Component does not exist on Maven Central.')
+                setTimeout(() => setToast(null), 3000)
+                return
+            }
+            navigate(`/component/${groupId}/${artifactId}`)
+        } catch (err) {
+            setToast('Error verifying component existence.')
+            setTimeout(() => setToast(null), 3000)
+        } finally {
+            setVerifying(false)
+        }
     }
 
     return (
@@ -153,7 +175,7 @@ function HomePage() {
                     Investigate Redundancy
                 </h1>
                 <p className="text-neutral-400 text-lg">Analyze component releases to identify added, removed, and modified classes across the ecosystem.</p>
-                <form onSubmit={handleSearch} className="flex bg-neutral-900 border border-neutral-800 rounded-full p-2 pl-6 focus-within:ring-2 ring-fuchsia-500/100 transition-all shadow-xl shadow-fuchsia-500/10">
+                <form onSubmit={handleSearch} className="relative flex bg-neutral-900 border border-neutral-800 rounded-full p-2 pl-6 focus-within:ring-2 ring-fuchsia-500/100 transition-all shadow-xl shadow-fuchsia-500/10">
                     <input
                         type="text"
                         placeholder="Search groupId:artifactId..."
@@ -161,9 +183,21 @@ function HomePage() {
                         value={search}
                         onChange={(e) => setSearch(e.target.value)}
                     />
-                    <button type="submit" className="bg-gradient-to-r from-cyan-600 to-cyan-500 hover:from-cyan-500 hover:to-cyan-400 px-8 py-2 rounded-full font-semibold transition-colors">
-                        Analyze
+                    <button type="submit" disabled={verifying} className="bg-gradient-to-r from-cyan-600 to-cyan-500 hover:from-cyan-500 hover:to-cyan-400 px-8 py-2 rounded-full font-semibold transition-colors disabled:opacity-50">
+                        {verifying ? (
+                            <>
+                                <Loader2 size={16} className="animate-spin inline mr-2" />
+                                Verifying...
+                            </>
+                        ) : (
+                            'Analyze'
+                        )}
                     </button>
+                    {toast && (
+                        <div className="absolute top-full left-1/2 -translate-x-1/2 mt-4 bg-red-900/90 border border-red-500/50 text-red-200 px-4 py-2 rounded-lg text-sm whitespace-nowrap z-50 shadow-lg shadow-red-900/20 backdrop-blur-md">
+                            {toast}
+                        </div>
+                    )}
                 </form>
             </section>
 
@@ -263,6 +297,7 @@ function ComponentPage() {
     const { groupId, artifactId } = useParams()
     const [searchParams] = useSearchParams()
     const [selectedVersion, setSelectedVersion] = useState(searchParams.get('version') || null)
+    const [baselineVersion, setBaselineVersion] = useState(null)
 
     const { data: component, isLoading: compLoading, error: compError } = useQuery({
         queryKey: ['component', groupId, artifactId],
@@ -278,8 +313,8 @@ function ComponentPage() {
     })
 
     const { data: diff, isLoading: diffLoading } = useQuery({
-        queryKey: ['diff', groupId, artifactId, selectedVersion],
-        queryFn: () => fetchReleaseDiff(groupId, artifactId, selectedVersion),
+        queryKey: ['diff', groupId, artifactId, selectedVersion, baselineVersion],
+        queryFn: () => fetchReleaseDiff(groupId, artifactId, selectedVersion, baselineVersion),
         enabled: !!selectedVersion,
     })
 
@@ -345,7 +380,10 @@ function ComponentPage() {
                                 return (
                                     <button
                                         key={rel.version}
-                                        onClick={() => setSelectedVersion(rel.version)}
+                                        onClick={() => {
+                                            setSelectedVersion(rel.version)
+                                            setBaselineVersion(null)
+                                        }}
                                         className={`w-full text-left p-4 transition-colors flex items-center justify-between group ${
                                             isSelected
                                                 ? isReady
@@ -378,12 +416,27 @@ function ComponentPage() {
                 </div>
 
                 <div className="lg:col-span-2 space-y-4">
-                    <h2 className="text-xl font-bold flex items-center gap-2">
-                        <FileCode className="text-cyan-500" size={20} /> Release Investigation
-                        {diff?.previousVersion && (
-                            <span className="text-sm font-normal text-neutral-500 ml-2">
-                                (Compared against <span className="font-mono text-neutral-400">{diff.previousVersion}</span>)
-                            </span>
+                    <h2 className="text-xl font-bold flex items-center justify-between w-full">
+                        <div className="flex items-center gap-2">
+                            <FileCode className="text-cyan-500" size={20} /> Release Investigation
+                        </div>
+                        {selectedVersion && selectedIsReady && (
+                            <div className="flex items-center gap-2 text-xs font-normal">
+                                <span className="text-neutral-500">Compare against:</span>
+                                <select 
+                                    value={baselineVersion || diff?.previousVersion || ''}
+                                    onChange={(e) => setBaselineVersion(e.target.value)}
+                                    className="bg-neutral-900 border border-neutral-800 rounded px-2 py-1 text-neutral-300 focus:outline-none focus:ring-1 ring-cyan-500/50"
+                                >
+                                    <option value="">(Auto-detect)</option>
+                                    {(component.releases || [])
+                                        .filter(r => r.status === 'READY' && r.version !== selectedVersion)
+                                        .map(r => (
+                                            <option key={r.version} value={r.version}>{r.version}</option>
+                                        ))
+                                    }
+                                </select>
+                            </div>
                         )}
                     </h2>
 
