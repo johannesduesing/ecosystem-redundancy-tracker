@@ -42,6 +42,11 @@ services:
         condition: service_healthy
       postgres:
         condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 1024M
 
   maven-central-analyzer:
     build: ./maven-central-redundancy-analyzer
@@ -56,6 +61,11 @@ services:
         condition: service_healthy
       postgres:
         condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 2048M
 
   redundancy-api-service:
     build: ./redundancy-api-service
@@ -72,6 +82,11 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '0.75'
+          memory: 2048M
 
   frontend:
     image: node:20-slim
@@ -83,6 +98,11 @@ services:
     command: sh -c "npm install && npm run dev"
     depends_on:
       - redundancy-api-service
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 512M
 
 volumes:
   postgres_data:

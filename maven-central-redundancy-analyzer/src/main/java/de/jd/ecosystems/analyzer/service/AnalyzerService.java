@@ -9,6 +9,7 @@ import de.jd.ecosystems.model.ClassFile;
 import de.jd.ecosystems.model.Component;
 import de.jd.ecosystems.model.ProcessingStatus;
 import de.jd.ecosystems.model.Release;
+import de.jd.ecosystems.util.DatabaseSizeGuard;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -37,20 +38,30 @@ public class AnalyzerService {
     private final ComponentRepository componentRepository;
     private final ReleaseRepository releaseRepository;
     private final ClassFileRepository classFileRepository;
+    private final DatabaseSizeGuard sizeGuard;
+
+    private static final long DB_SIZE_LIMIT = 25 * 1024 * 1024 * 1024L; // 25 GB
 
     public AnalyzerService(MavenCentralClient mavenClient,
             ComponentRepository componentRepository,
             ReleaseRepository releaseRepository,
-            ClassFileRepository classFileRepository) {
+            ClassFileRepository classFileRepository,
+            DatabaseSizeGuard sizeGuard) {
         this.mavenClient = mavenClient;
         this.componentRepository = componentRepository;
         this.releaseRepository = releaseRepository;
         this.classFileRepository = classFileRepository;
+        this.sizeGuard = sizeGuard;
     }
 
     @RabbitListener(queues = "maven-central-release-analysis")
     @Transactional
     public void processRelease(ReleaseAnalysisRequest request) {
+        if (sizeGuard.isLimitExceeded(DB_SIZE_LIMIT)) {
+            System.err.println("Skipping release analysis due to DB size limit: " + request.getGroupId() + ":" + request.getArtifactId() + ":" + request.getVersion());
+            return;
+        }
+
         String groupId = request.getGroupId();
         String artifactId = request.getArtifactId();
         String version = request.getVersion();
