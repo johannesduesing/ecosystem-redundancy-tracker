@@ -3,7 +3,7 @@ import { Routes, Route, Link, useNavigate, useParams, useSearchParams } from 're
 import { Search, Home, CheckCircle2, Clock, XCircle, AlertCircle, ChevronRight, FileCode, Loader2, BarChart3, FileX, Package, History, Layers, Zap, RefreshCcw } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { motion, AnimatePresence } from 'framer-motion'
-import { fetchComponents, fetchComponentRedundancy, fetchReleaseDiff, fetchReleasesForClass, fetchTopClasses, fetchClassDetails, fetchClassRevisions, checkComponentExists, fetchComponentHistory, fetchGlobalStats } from './api'
+import { fetchComponents, fetchComponentRedundancy, fetchReleaseDiff, fetchReleasesForFile, fetchTopFiles, fetchFileDetails, fetchFileRevisions, checkComponentExists, fetchComponentHistory, fetchGlobalStats } from './api'
 
 const formatBytes = (bytes) => {
     if (!bytes || bytes <= 0) return '0 KB'
@@ -35,16 +35,17 @@ function FqnSearchBar() {
         if (!input.trim()) return
 
         let fqn = input.trim()
-        if (!fqn.endsWith('.class')) {
-            fqn += '.class'
+        if (!fqn.includes('.') && !fqn.endsWith('.class')) {
+            // No extension provided, maybe it's still a class? 
+            // In the new system we don't force it, but let's keep it simple for now and just search exactly as is.
         }
 
         setLoading(true)
         try {
-            const data = await fetchClassRevisions(fqn, 0, 1)
+            const data = await fetchFileRevisions(fqn, 0, 1)
             const count = data?.page?.totalElements ?? data?.totalElements ?? 0
             if (count > 0) {
-                navigate(`/class/fqn/${encodeURIComponent(fqn)}`)
+                navigate(`/files/${encodeURIComponent(fqn)}`)
                 setInput('')
             } else {
                 setToast(`FQN not found in index.`)
@@ -63,7 +64,7 @@ function FqnSearchBar() {
             <form onSubmit={handleSearch} className="flex relative items-center">
                 <input
                     type="text"
-                    placeholder="Quick find FQN..."
+                    placeholder="Quick find File..."
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
                     className="bg-neutral-900 border border-neutral-800 rounded-full py-1.5 pl-4 pr-10 text-sm focus:outline-none focus:ring-2 ring-cyan-500/50 w-64 transition-all"
@@ -105,8 +106,8 @@ function App() {
                 <Routes>
                     <Route path="/" element={<HomePage />} />
                     <Route path="/component/:groupId/:artifactId" element={<ComponentPage />} />
-                    <Route path="/class/:id" element={<ClassPage />} />
-                    <Route path="/class/fqn/:fqn" element={<ClassFqnPage />} />
+                    <Route path="/files/:fqn" element={<FileRevisionsPage />} />
+                    <Route path="/file/:id" element={<FileRevisionDetailsPage />} />
                 </Routes>
             </main>
 
@@ -236,8 +237,8 @@ function HomePage() {
                         icon={History}
                     />
                     <MetricCard
-                        label="Unique Classes"
-                        value={stats?.totalUniqueClassFiles ?? 0}
+                        label="Unique Files"
+                        value={stats?.totalUniqueFiles ?? 0}
                         color="text-blue-400"
                         icon={Layers}
                     />
@@ -249,7 +250,7 @@ function HomePage() {
                     />
                     <MetricCard
                         label="Redundancy Coefficient"
-                        value={(stats?.totalUniqueClassFiles > 0 ? (stats.totalFileOccurrences / stats.totalUniqueClassFiles).toFixed(1) : '0.0') + 'x'}
+                        value={(stats?.totalUniqueFiles > 0 ? (stats.totalFileOccurrences / stats.totalUniqueFiles).toFixed(1) : '0.0') + 'x'}
                         color="text-amber-400"
                         icon={RefreshCcw}
                     />
@@ -306,40 +307,40 @@ function HomePage() {
                         Widespread Redundancy
                     </h2>
                 </div>
-                <p className="text-neutral-400">Class files present in the highest number of component releases across all indexed artifacts.</p>
+                <p className="text-neutral-400">Files present in the highest number of component releases across all indexed artifacts.</p>
 
-                <TopClassesList />
+                <TopFilesList />
             </section>
         </div>
     )
 }
 
-function TopClassesList() {
-    const { data: topClasses, isLoading } = useQuery({
-        queryKey: ['top-classes'],
-        queryFn: fetchTopClasses,
+function TopFilesList() {
+    const { data: topFiles, isLoading } = useQuery({
+        queryKey: ['top-files'],
+        queryFn: fetchTopFiles,
     })
 
-    if (isLoading) return <div className="h-48 flex items-center justify-center text-cyan-500"><Clock className="animate-spin mr-2" /> Loading top classes...</div>
+    if (isLoading) return <div className="h-48 flex items-center justify-center text-cyan-500"><Clock className="animate-spin mr-2" /> Loading top files...</div>
 
-    if (!topClasses || topClasses.length === 0) {
+    if (!topFiles || topFiles.length === 0) {
         return (
             <div className="glass-panel p-12 text-center text-neutral-500">
-                No class files indexed yet. Once component releases are analyzed, the most widespread classes will appear here.
+                No files indexed yet. Once component releases are analyzed, the most widespread files will appear here.
             </div>
         )
     }
 
     return (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {topClasses.map(cf => (
+            {topFiles.map(file => (
                 <Link
-                    key={cf.id}
-                    to={`/class/fqn/${encodeURIComponent(cf.fqn)}`}
+                    key={file.id}
+                    to={`/files/${encodeURIComponent(file.fqn)}`}
                     className="glass-panel p-4 hover:bg-neutral-900 transition-all group flex items-center justify-between border-l-4 border-l-cyan-500/30 hover:border-l-cyan-500"
                 >
                     <div className="flex-1 min-w-0">
-                        <p className="text-sm font-mono text-neutral-300 group-hover:text-cyan-400 truncate">{formatFqn(cf.fqn)}</p>
+                        <p className="text-sm font-mono text-neutral-300 group-hover:text-cyan-400 truncate">{formatFqn(file.fqn)}</p>
                     </div>
                     <ChevronRight size={20} className="text-neutral-700 group-hover:text-cyan-500 group-hover:translate-x-1 transition-all flex-shrink-0 ml-4" />
                 </Link>
@@ -415,7 +416,7 @@ function LifetimeChart({ data }) {
                             />
                         ))}
 
-                        {/* Total Classes Line */}
+                        {/* Total Files Line */}
                         <motion.path
                             initial={{ pathLength: 0 }}
                             animate={{ pathLength: 1 }}
@@ -427,7 +428,7 @@ function LifetimeChart({ data }) {
                             strokeDasharray="4 2"
                         />
 
-                        {/* Added Classes Line */}
+                        {/* Added Files Line */}
                         <motion.path
                             initial={{ pathLength: 0 }}
                             animate={{ pathLength: 1 }}
@@ -440,7 +441,7 @@ function LifetimeChart({ data }) {
                             strokeLinejoin="round"
                         />
 
-                        {/* Modified Classes Line */}
+                        {/* Modified Files Line */}
                         <motion.path
                             initial={{ pathLength: 0 }}
                             animate={{ pathLength: 1 }}
@@ -453,7 +454,7 @@ function LifetimeChart({ data }) {
                             strokeLinejoin="round"
                         />
 
-                        {/* Removed Classes Line */}
+                        {/* Removed Files Line */}
                         <motion.path
                             initial={{ pathLength: 0 }}
                             animate={{ pathLength: 1 }}
@@ -537,7 +538,7 @@ function LifetimeChart({ data }) {
                                     </g>
 
                                     <line x1="15" y1="105" x2="185" y2="105" className="stroke-neutral-800" strokeWidth="1" />
-                                    <text x="15" y="114" className="fill-neutral-500 text-[10px] font-mono uppercase tracking-tighter">Total Classes: {hoveredData.totalCount}</text>
+                                    <text x="15" y="114" className="fill-neutral-500 text-[10px] font-mono uppercase tracking-tighter">Total Files: {hoveredData.totalCount}</text>
                                 </motion.g>
                             )}
                         </AnimatePresence>
@@ -545,9 +546,9 @@ function LifetimeChart({ data }) {
                 </svg>
             </div>
             <div className="flex justify-center gap-6 mt-4 text-[8px] uppercase tracking-widest font-bold opacity-60">
-                <div className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-green-500" /> Classes Added</div>
-                <div className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-yellow-500" /> Classes Modified</div>
-                <div className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-red-500" /> Classes Removed</div>
+                <div className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-green-500" /> Files Added</div>
+                <div className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-yellow-500" /> Files Modified</div>
+                <div className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-red-500" /> Files Removed</div>
             </div>
         </motion.div>
     )
@@ -560,11 +561,12 @@ function ComponentPage() {
     const [baselineVersion, setBaselineVersion] = useState(null)
     const [historyData, setHistoryData] = useState(null)
     const [loadingHistory, setLoadingHistory] = useState(false)
+    const [codeOnly, setCodeOnly] = useState(true)
 
     const handleGenerateHistory = async () => {
         setLoadingHistory(true)
         try {
-            const data = await fetchComponentHistory(groupId, artifactId)
+            const data = await fetchComponentHistory(groupId, artifactId, codeOnly)
             setHistoryData(data)
         } catch (err) {
             console.error("Failed to load history:", err)
@@ -587,8 +589,8 @@ function ComponentPage() {
     })
 
     const { data: diff, isLoading: diffLoading } = useQuery({
-        queryKey: ['diff', groupId, artifactId, selectedVersion, baselineVersion],
-        queryFn: () => fetchReleaseDiff(groupId, artifactId, selectedVersion, baselineVersion),
+        queryKey: ['diff', groupId, artifactId, selectedVersion, baselineVersion, codeOnly],
+        queryFn: () => fetchReleaseDiff(groupId, artifactId, selectedVersion, baselineVersion, codeOnly),
         enabled: !!selectedVersion,
     })
 
@@ -651,6 +653,31 @@ function ComponentPage() {
                 {historyData && !loadingHistory && (
                     <div className="space-y-4 flex-1">
                         <LifetimeChart data={historyData} />
+                    </div>
+                )}
+            </div>
+
+            <div className="flex items-center justify-between glass-panel p-4">
+                <div className="flex items-center gap-4 text-sm">
+                    <span className="font-bold text-neutral-400">View Mode:</span>
+                    <div className="flex bg-neutral-900 rounded-lg p-1 border border-neutral-800">
+                        <button
+                            onClick={() => { setCodeOnly(true); setHistoryData(null); }}
+                            className={`px-4 py-1.5 rounded-md transition-all font-bold ${codeOnly ? 'bg-cyan-500 text-neutral-950 shadow-lg shadow-cyan-500/20' : 'text-neutral-500 hover:text-neutral-300'}`}
+                        >
+                            Code Only
+                        </button>
+                        <button
+                            onClick={() => { setCodeOnly(false); setHistoryData(null); }}
+                            className={`px-4 py-1.5 rounded-md transition-all font-bold ${!codeOnly ? 'bg-fuchsia-500 text-neutral-950 shadow-lg shadow-fuchsia-500/20' : 'text-neutral-500 hover:text-neutral-300'}`}
+                        >
+                            All Files
+                        </button>
+                    </div>
+                </div>
+                {hasPendingReleases && (
+                    <div className="flex items-center gap-2 text-[10px] font-black uppercase text-amber-500 bg-amber-500/10 px-3 py-1.5 rounded-full border border-amber-500/20">
+                        <Loader2 size={10} className="animate-spin" /> Some releases indexing...
                     </div>
                 )}
             </div>
@@ -768,59 +795,59 @@ function ComponentPage() {
                                 <div className="space-y-2">
                                     <h3 className="font-bold text-lg">Empty Release</h3>
                                     <p className="text-neutral-400 text-sm max-w-xs">
-                                        This release contains no class files to analyze.
+                                        This release contains no {codeOnly ? 'code' : ''} files to analyze.
                                     </p>
                                 </div>
                             </div>
                         ) : (
-                        <div className="space-y-6">
-                            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-                                <MetricCard
-                                    label="Total Classes"
-                                    value={diff.totalClasses || 0}
-                                    color="text-cyan-500"
-                                    subValue={formatBytes(diff.totalSizeBytes)}
-                                />
-                                <MetricCard
-                                    label="Added"
-                                    value={diff.added?.length || 0}
-                                    color="text-green-500"
-                                    quota={diff.totalSizeBytes > 0 ? (diff.addedSizeBytes / diff.totalSizeBytes * 100).toFixed(1) : 0}
-                                    quotaLabel="Addition Quota"
-                                    subValue={formatBytes(diff.addedSizeBytes)}
-                                />
-                                <MetricCard
-                                    label="Modified"
-                                    value={diff.modified?.length || 0}
-                                    color="text-yellow-500"
-                                    quota={diff.totalSizeBytes > 0 ? (diff.modifiedSizeBytes / diff.totalSizeBytes * 100).toFixed(1) : 0}
-                                    quotaLabel="Modification Quota"
-                                    subValue={formatBytes(diff.modifiedSizeBytes)}
-                                />
-                                <MetricCard
-                                    label="Unmodified"
-                                    value={(diff.totalClasses || 0) - (diff.added?.length || 0) - (diff.modified?.length || 0)}
-                                    color="text-neutral-300"
-                                    quota={diff.totalSizeBytes > 0 ? ((diff.totalSizeBytes - diff.addedSizeBytes - diff.modifiedSizeBytes) / diff.totalSizeBytes * 100).toFixed(1) : 0}
-                                    quotaLabel="Unmodified Quota"
-                                    subValue={formatBytes(diff.totalSizeBytes - diff.addedSizeBytes - diff.modifiedSizeBytes)}
-                                />
-                                <MetricCard
-                                    label="Removed"
-                                    value={diff.removed?.length || 0}
-                                    color="text-red-500"
-                                    subValue={formatBytes(diff.removedSizeBytes)}
-                                />
-                            </div>
+                            <div className="space-y-6">
+                                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+                                    <MetricCard
+                                        label={codeOnly ? "Total Code Files" : "Total Files"}
+                                        value={diff.totalClasses || 0}
+                                        color="text-cyan-500"
+                                        subValue={formatBytes(diff.totalSizeBytes)}
+                                    />
+                                    <MetricCard
+                                        label="Added"
+                                        value={diff.added?.length || 0}
+                                        color="text-green-500"
+                                        quota={diff.totalSizeBytes > 0 ? (diff.addedSizeBytes / diff.totalSizeBytes * 100).toFixed(1) : 0}
+                                        quotaLabel="Addition Quota"
+                                        subValue={formatBytes(diff.addedSizeBytes)}
+                                    />
+                                    <MetricCard
+                                        label="Modified"
+                                        value={diff.modified?.length || 0}
+                                        color="text-yellow-500"
+                                        quota={diff.totalSizeBytes > 0 ? (diff.modifiedSizeBytes / diff.totalSizeBytes * 100).toFixed(1) : 0}
+                                        quotaLabel="Modification Quota"
+                                        subValue={formatBytes(diff.modifiedSizeBytes)}
+                                    />
+                                    <MetricCard
+                                        label="Unmodified"
+                                        value={(diff.totalClasses || 0) - (diff.added?.length || 0) - (diff.modified?.length || 0)}
+                                        color="text-neutral-300"
+                                        quota={diff.totalSizeBytes > 0 ? ((diff.totalSizeBytes - diff.addedSizeBytes - diff.modifiedSizeBytes) / diff.totalSizeBytes * 100).toFixed(1) : 0}
+                                        quotaLabel="Unmodified Quota"
+                                        subValue={formatBytes(diff.totalSizeBytes - diff.addedSizeBytes - diff.modifiedSizeBytes)}
+                                    />
+                                    <MetricCard
+                                        label="Removed"
+                                        value={diff.removed?.length || 0}
+                                        color="text-red-500"
+                                        subValue={formatBytes(diff.removedSizeBytes)}
+                                    />
+                                </div>
 
-                            <QuotaBar diff={diff} />
+                                <QuotaBar diff={diff} />
 
-                            <div className="glass-panel p-6 space-y-6">
-                                <DiffSection title="Added Classes" classes={diff.added} color="bg-green-500" />
-                                <DiffSection title="Modified Classes" classes={diff.modified} color="bg-yellow-500" />
-                                <DiffSection title="Removed Classes" classes={diff.removed} color="bg-red-500" />
+                                <div className="glass-panel p-6 space-y-6">
+                                    <DiffSection title="Added" files={diff.added} color="bg-green-500" />
+                                    <DiffSection title="Modified" files={diff.modified} color="bg-yellow-500" />
+                                    <DiffSection title="Removed" files={diff.removed} color="bg-red-500" />
+                                </div>
                             </div>
-                        </div>
                         )
                     ) : null}
                 </div>
@@ -829,24 +856,24 @@ function ComponentPage() {
     )
 }
 
-function DiffSection({ title, classes, color }) {
+function DiffSection({ title, files, color }) {
     return (
         <div className="pt-6 first:pt-0 border-t first:border-t-0 border-neutral-800">
             <h3 className="font-bold mb-4 flex items-center gap-2">
                 <span className={`w-2 h-2 rounded-full ${color}`} /> {title}
             </h3>
             <div className="space-y-2 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
-                {classes?.map(cf => (
+                {files?.map(file => (
                     <Link
-                        key={cf.id}
-                        to={`/class/fqn/${encodeURIComponent(cf.fqn)}`}
+                        key={file.id}
+                        to={`/file/${file.id}`}
                         className="flex items-center justify-between p-2 rounded hover:bg-neutral-800/50 group transition-colors border border-transparent hover:border-neutral-800"
                     >
-                        <span className="text-sm font-mono text-neutral-300 group-hover:text-cyan-400 truncate flex-1">{formatFqn(cf.fqn)}</span>
+                        <span className="text-sm font-mono text-neutral-300 group-hover:text-cyan-400 truncate flex-1">{formatFqn(file.fqn)}</span>
                         <ChevronRight size={14} className="text-neutral-700 ml-2" />
                     </Link>
                 ))}
-                {classes?.length === 0 && <p className="text-neutral-600 text-sm italic">No classes.</p>}
+                {files?.length === 0 && <p className="text-neutral-600 text-sm italic">No changes.</p>}
             </div>
         </div>
     )
@@ -865,16 +892,16 @@ function MetricCard({ label, value, color, quota, quotaLabel, subValue, icon: Ic
                     <span className="text-[10px] font-bold text-neutral-500 uppercase tracking-wider">{label}</span>
                     {Icon && <Icon className={color} size={14} opacity={0.5} />}
                 </div>
-            <p className={`text-3xl font-bold ${color}`}>{formatNumber(value)}</p>
-            {subValue && (
-                <p className="text-[10px] text-neutral-400 mt-1 font-mono">{subValue}</p>
-            )}
-            {quota !== undefined && (
-                <div className="mt-3 pt-3 border-t border-neutral-800/50">
-                    <p className="text-neutral-500 text-[9px] uppercase tracking-tight mb-0.5">{quotaLabel}</p>
-                    <p className="text-sm font-mono text-neutral-300">{quota}%</p>
-                </div>
-            )}
+                <p className={`text-3xl font-bold ${color}`}>{formatNumber(value)}</p>
+                {subValue && (
+                    <p className="text-[10px] text-neutral-400 mt-1 font-mono">{subValue}</p>
+                )}
+                {quota !== undefined && (
+                    <div className="mt-3 pt-3 border-t border-neutral-800/50">
+                        <p className="text-neutral-500 text-[9px] uppercase tracking-tight mb-0.5">{quotaLabel}</p>
+                        <p className="text-sm font-mono text-neutral-300">{quota}%</p>
+                    </div>
+                )}
             </div>
         </div>
     )
@@ -914,27 +941,168 @@ function QuotaBar({ diff }) {
     );
 }
 
-function ClassPage() {
+function FileRevisionsPage() {
+    const { fqn } = useParams()
+    const decodedFqn = decodeURIComponent(fqn)
+    const [page, setPage] = useState(0)
+    const [sortField, setSortField] = useState('releaseCount')
+    const [sortDir, setSortDir] = useState('desc')
+
+    const sortString = `${sortField},${sortDir}`
+
+    const { data: revisionsData, isLoading } = useQuery({
+        queryKey: ['file-revisions', decodedFqn, page, sortString],
+        queryFn: () => fetchFileRevisions(decodedFqn, page, 30, sortString),
+    })
+
+    if (isLoading) return <div className="text-center py-24"><Clock className="animate-spin mx-auto text-cyan-500" size={48} /></div>
+
+    if (!revisionsData) return (
+        <div className="glass-panel p-8 text-center text-red-500 max-w-lg mx-auto mt-8">
+            <AlertCircle className="mx-auto mb-4" size={48} />
+            <h2 className="text-xl font-bold mb-2">Revisions Not Found</h2>
+            <p className="text-neutral-400 mb-6">Could not load revisions for {decodedFqn}.</p>
+        </div>
+    )
+
+    const toggleSort = (field) => {
+        if (sortField === field) {
+            setSortDir(sortDir === 'asc' ? 'desc' : 'asc')
+        } else {
+            setSortField(field)
+            setSortDir('desc')
+        }
+        setPage(0)
+    }
+
+    return (
+        <div className="max-w-4xl mx-auto space-y-8">
+            <div className="glass-panel p-8 space-y-6">
+                <div className="flex flex-col md:flex-row md:items-start justify-between gap-6">
+                    <div className="relative flex-1 min-w-0">
+                        <div className="flex items-center gap-3 text-cyan-500 mb-2">
+                            <FileCode size={24} />
+                            <span className="font-bold uppercase tracking-widest text-sm">File Revisions Investigation</span>
+                        </div>
+                        <h1 className="text-2xl font-bold break-all font-mono mb-2 md:mb-0">
+                            {formatFqn(decodedFqn)}
+                        </h1>
+                    </div>
+
+                    <div className="bg-neutral-900/50 rounded-lg p-4 border border-neutral-800 text-center md:w-48 flex-shrink-0">
+                        <p className="text-neutral-500 text-xs uppercase tracking-wider font-semibold mb-1">Total Revisions</p>
+                        <p className="font-mono text-3xl font-bold text-cyan-500">{revisionsData?.page?.totalElements || revisionsData?.totalElements || 0}</p>
+                    </div>
+                </div>
+            </div>
+
+            <div className="space-y-4">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                    <div>
+                        <h2 className="text-xl font-bold flex items-center gap-2">
+                            <Clock className="text-cyan-500" size={20} />
+                            Revision History
+                        </h2>
+                        <p className="text-neutral-400">All physically distinct versions of this file across the ecosystem.</p>
+                    </div>
+                    <div className="flex bg-neutral-900 border border-neutral-800 rounded-lg p-1">
+                        <button
+                            onClick={() => toggleSort('releaseCount')}
+                            className={`px-3 py-1.5 rounded text-sm font-medium transition-colors flex items-center gap-1 ${sortField === 'releaseCount' ? 'bg-cyan-600' : 'hover:bg-neutral-800'}`}
+                        >
+                            Most Used {sortField === 'releaseCount' && (sortDir === 'asc' ? '↑' : '↓')}
+                        </button>
+                        <button
+                            onClick={() => toggleSort('sizeBytes')}
+                            className={`px-3 py-1.5 rounded text-sm font-medium transition-colors flex items-center gap-1 ${sortField === 'sizeBytes' ? 'bg-cyan-600' : 'hover:bg-neutral-800'}`}
+                        >
+                            Size {sortField === 'sizeBytes' && (sortDir === 'asc' ? '↑' : '↓')}
+                        </button>
+                    </div>
+                </div>
+
+                <div className="glass-panel overflow-hidden">
+                    <div className="divide-y divide-neutral-800">
+                        {revisionsData.content.map(file => (
+                            <Link
+                                key={file.id}
+                                to={`/file/${file.id}`}
+                                className="p-4 hover:bg-neutral-900 transition-all group flex flex-col sm:flex-row gap-4 sm:items-center justify-between"
+                            >
+                                <div className="space-y-1 overflow-hidden">
+                                    <div className="flex items-center gap-2">
+                                        <span className="font-mono text-sm text-neutral-300 group-hover:text-cyan-400 truncate break-all">{file.sha512}</span>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-6 sm:gap-8 flex-shrink-0 text-right sm:text-left">
+                                    <div className="space-y-0.5">
+                                        <p className="text-[10px] text-neutral-500 uppercase tracking-wider font-semibold">Size</p>
+                                        <p className="font-mono text-sm">{formatBytes(file.sizeBytes)}</p>
+                                    </div>
+                                    <div className="space-y-0.5">
+                                        <p className="text-[10px] text-neutral-500 uppercase tracking-wider font-semibold">Uses</p>
+                                        <p className="font-mono text-sm font-bold">{file.releaseCount}</p>
+                                    </div>
+                                    <ChevronRight size={20} className="text-neutral-700 group-hover:text-cyan-500 group-hover:translate-x-1 transition-all" />
+                                </div>
+                            </Link>
+                        ))}
+                        {revisionsData.content.length === 0 && (
+                            <div className="text-center text-neutral-500 p-8">No revisions found.</div>
+                        )}
+                    </div>
+                </div>
+
+                {(revisionsData?.page?.totalPages || revisionsData?.totalPages) > 0 && (
+                    <div className="flex justify-center items-center gap-4 mt-8 pb-8">
+                        <button
+                            onClick={() => setPage(p => Math.max(0, p - 1))}
+                            disabled={revisionsData.first ?? (revisionsData?.page?.number === 0)}
+                            className={`px-4 py-2 rounded-lg font-medium transition-colors ${(revisionsData.first ?? (revisionsData?.page?.number === 0)) ? 'bg-neutral-800 text-neutral-500 cursor-not-allowed' : 'bg-gradient-to-r from-cyan-600 to-cyan-500 hover:from-cyan-500 hover:to-cyan-400 text-white'
+                                }`}
+                        >
+                            Previous
+                        </button>
+                        <span className="text-neutral-400 font-mono text-sm">
+                            Page {(revisionsData?.page?.number ?? revisionsData.number) + 1} of {revisionsData?.page?.totalPages ?? revisionsData.totalPages}
+                        </span>
+                        <button
+                            onClick={() => setPage(p => p + 1)}
+                            disabled={revisionsData.last ?? (revisionsData?.page?.number + 1 >= (revisionsData?.page?.totalPages ?? revisionsData.totalPages))}
+                            className={`px-4 py-2 rounded-lg font-medium transition-colors ${(revisionsData.last ?? (revisionsData?.page?.number + 1 >= (revisionsData?.page?.totalPages ?? revisionsData.totalPages))) ? 'bg-neutral-800 text-neutral-500 cursor-not-allowed' : 'bg-gradient-to-r from-cyan-600 to-cyan-500 hover:from-cyan-500 hover:to-cyan-400 text-white'
+                                }`}
+                        >
+                            Next
+                        </button>
+                    </div>
+                )}
+            </div>
+        </div>
+    )
+}
+
+function FileRevisionDetailsPage() {
     const { id } = useParams()
     const [page, setPage] = useState(0)
 
-    const { data: classDetails, isLoading: detailsLoading } = useQuery({
-        queryKey: ['class-details', id],
-        queryFn: () => fetchClassDetails(id),
+    const { data: fileRevision, isLoading: detailsLoading } = useQuery({
+        queryKey: ['file-details', id],
+        queryFn: () => fetchFileDetails(id),
     })
 
     const { data: releasesData, isLoading: releasesLoading } = useQuery({
-        queryKey: ['class-releases', id, page],
-        queryFn: () => fetchReleasesForClass(id, page, 10),
+        queryKey: ['file-releases', id, page],
+        queryFn: () => fetchReleasesForFile(id, page, 10),
+        enabled: !!id
     })
 
     if (detailsLoading || releasesLoading) return <div className="text-center py-24"><Clock className="animate-spin mx-auto text-cyan-500" size={48} /></div>
 
-    if (!classDetails) return (
+    if (!fileRevision) return (
         <div className="glass-panel p-8 text-center text-red-500 max-w-lg mx-auto mt-8">
             <AlertCircle className="mx-auto mb-4" size={48} />
-            <h2 className="text-xl font-bold mb-2">Class Not Found</h2>
-            <p className="text-neutral-400 mb-6">Could not load the details for class ID {id}.</p>
+            <h2 className="text-xl font-bold mb-2">File Revision Not Found</h2>
+            <p className="text-neutral-400 mb-6">Could not load the details for the specified file revision.</p>
         </div>
     )
 
@@ -944,15 +1112,15 @@ function ClassPage() {
                 <div className="relative">
                     <div className="flex items-center gap-3 text-cyan-500 mb-2">
                         <FileCode size={24} />
-                        <span className="font-bold uppercase tracking-widest text-sm">Class Investigation</span>
+                        <span className="font-bold uppercase tracking-widest text-sm">File Revision Investigation</span>
                     </div>
 
                     <div className="flex flex-col sm:flex-row justify-between items-start gap-4 mb-6">
                         <h1 className="text-2xl font-bold break-all font-mono">
-                            {formatFqn(classDetails.fqn)}
+                            {formatFqn(fileRevision.fqn)}
                         </h1>
                         <Link
-                            to={`/class/fqn/${encodeURIComponent(classDetails.fqn)}`}
+                            to={`/files/${encodeURIComponent(fileRevision.fqn)}`}
                             className="bg-neutral-800 hover:bg-neutral-700 text-neutral-300 px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 flex-shrink-0"
                         >
                             All Revisions <ChevronRight size={16} />
@@ -962,15 +1130,15 @@ function ClassPage() {
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                         <div className="bg-neutral-900/50 rounded-lg p-4 border border-neutral-800">
                             <p className="text-neutral-500 text-xs uppercase tracking-wider font-semibold mb-1">File Size</p>
-                            <p className="font-mono text-lg">{formatBytes(classDetails.sizeBytes)}</p>
+                            <p className="font-mono text-lg">{formatBytes(fileRevision.sizeBytes)}</p>
                         </div>
                         <div className="bg-neutral-900/50 rounded-lg p-4 border border-neutral-800">
                             <p className="text-neutral-500 text-xs uppercase tracking-wider font-semibold mb-1">Total Releases</p>
-                            <p className="font-mono text-lg">{classDetails.releaseCount}</p>
+                            <p className="font-mono text-lg">{fileRevision.releaseCount}</p>
                         </div>
                         <div className="bg-neutral-900/50 rounded-lg p-4 border border-neutral-800 md:col-span-3">
                             <p className="text-neutral-500 text-xs uppercase tracking-wider font-semibold mb-1">SHA-512 Hash</p>
-                            <p className="font-mono text-sm break-all text-neutral-300">{classDetails.sha512}</p>
+                            <p className="font-mono text-sm break-all text-neutral-300">{fileRevision.sha512}</p>
                         </div>
                     </div>
                 </div>
@@ -981,7 +1149,7 @@ function ClassPage() {
                     <Clock className="text-cyan-500" size={20} />
                     Widespread Redundancy
                 </h2>
-                <p className="text-neutral-400">This specific binary version of the class appears in the following releases:</p>
+                <p className="text-neutral-400">This specific binary version of the file appears in the following releases:</p>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {releasesData?.content?.map(rel => (
@@ -996,7 +1164,7 @@ function ClassPage() {
                                     {rel.component.artifactId} <span className="text-neutral-400 ml-1">{rel.version}</span>
                                 </p>
                             </div>
-                            <ChevronRight size={20} className="text-neutral-700 group-hover:text-cyan-500 group-hover:tranneutral-x-1 transition-all" />
+                            <ChevronRight size={20} className="text-neutral-700 group-hover:text-cyan-500 group-hover:translate-x-1 transition-all" />
                         </Link>
                     ))}
                     {releasesData?.content?.length === 0 && (
@@ -1034,144 +1202,5 @@ function ClassPage() {
 
 export default App
 
-function ClassFqnPage() {
-    const { fqn } = useParams()
-    const decodedFqn = decodeURIComponent(fqn)
-    const [page, setPage] = useState(0)
-    const [sortField, setSortField] = useState('releaseCount')
-    const [sortDir, setSortDir] = useState('desc')
-
-    const sortString = `${sortField},${sortDir}`
-
-    const { data: revisionsData, isLoading } = useQuery({
-        queryKey: ['class-revisions', decodedFqn, page, sortString],
-        queryFn: () => fetchClassRevisions(decodedFqn, page, 30, sortString),
-    })
-
-    if (isLoading) return <div className="text-center py-24"><Clock className="animate-spin mx-auto text-cyan-500" size={48} /></div>
-
-    if (!revisionsData) return (
-        <div className="glass-panel p-8 text-center text-red-500 max-w-lg mx-auto mt-8">
-            <AlertCircle className="mx-auto mb-4" size={48} />
-            <h2 className="text-xl font-bold mb-2">Revisions Not Found</h2>
-            <p className="text-neutral-400 mb-6">Could not load revisions for {decodedFqn}.</p>
-        </div>
-    )
-
-    const toggleSort = (field) => {
-        if (sortField === field) {
-            setSortDir(sortDir === 'asc' ? 'desc' : 'asc')
-        } else {
-            setSortField(field)
-            setSortDir('desc')
-        }
-        setPage(0)
-    }
-
-    return (
-        <div className="max-w-4xl mx-auto space-y-8">
-            <div className="glass-panel p-8 space-y-6">
-                <div className="flex flex-col md:flex-row md:items-start justify-between gap-6">
-                    <div className="relative flex-1 min-w-0">
-                        <div className="flex items-center gap-3 text-cyan-500 mb-2">
-                            <FileCode size={24} />
-                            <span className="font-bold uppercase tracking-widest text-sm">FQN Revisions Investigation</span>
-                        </div>
-                        <h1 className="text-2xl font-bold break-all font-mono mb-2 md:mb-0">
-                            {formatFqn(decodedFqn)}
-                        </h1>
-                    </div>
-
-                    <div className="bg-neutral-900/50 rounded-lg p-4 border border-neutral-800 text-center md:w-48 flex-shrink-0">
-                        <p className="text-neutral-500 text-xs uppercase tracking-wider font-semibold mb-1">Total Revisions</p>
-                        <p className="font-mono text-3xl font-bold text-cyan-500">{revisionsData?.page?.totalElements || revisionsData?.totalElements || 0}</p>
-                    </div>
-                </div>
-            </div>
-
-            <div className="space-y-4">
-                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                    <div>
-                        <h2 className="text-xl font-bold flex items-center gap-2">
-                            <Clock className="text-cyan-500" size={20} />
-                            Revision History
-                        </h2>
-                        <p className="text-neutral-400">All physically distinct versions of this class across the ecosystem.</p>
-                    </div>
-                    <div className="flex bg-neutral-900 border border-neutral-800 rounded-lg p-1">
-                        <button
-                            onClick={() => toggleSort('releaseCount')}
-                            className={`px-3 py-1.5 rounded text-sm font-medium transition-colors flex items-center gap-1 ${sortField === 'releaseCount' ? 'bg-cyan-600' : 'hover:bg-neutral-800'}`}
-                        >
-                            Most Used {sortField === 'releaseCount' && (sortDir === 'asc' ? '↑' : '↓')}
-                        </button>
-                        <button
-                            onClick={() => toggleSort('sizeBytes')}
-                            className={`px-3 py-1.5 rounded text-sm font-medium transition-colors flex items-center gap-1 ${sortField === 'sizeBytes' ? 'bg-cyan-600' : 'hover:bg-neutral-800'}`}
-                        >
-                            Size {sortField === 'sizeBytes' && (sortDir === 'asc' ? '↑' : '↓')}
-                        </button>
-                    </div>
-                </div>
-
-                <div className="glass-panel overflow-hidden">
-                    <div className="divide-y divide-neutral-800">
-                        {revisionsData.content.map(cf => (
-                            <Link
-                                key={cf.id}
-                                to={`/class/${cf.id}`}
-                                className="p-4 hover:bg-neutral-900 transition-all group flex flex-col sm:flex-row gap-4 sm:items-center justify-between"
-                            >
-                                <div className="space-y-1 overflow-hidden">
-                                    <div className="flex items-center gap-2">
-                                        <span className="font-mono text-sm text-neutral-300 group-hover:text-cyan-400 truncate break-all">{cf.sha512}</span>
-                                    </div>
-                                </div>
-                                <div className="flex items-center gap-6 sm:gap-8 flex-shrink-0 text-right sm:text-left">
-                                    <div className="space-y-0.5">
-                                        <p className="text-[10px] text-neutral-500 uppercase tracking-wider font-semibold">Size</p>
-                                        <p className="font-mono text-sm">{formatBytes(cf.sizeBytes)}</p>
-                                    </div>
-                                    <div className="space-y-0.5">
-                                        <p className="text-[10px] text-neutral-500 uppercase tracking-wider font-semibold">Uses</p>
-                                        <p className="font-mono text-sm font-bold">{cf.releaseCount}</p>
-                                    </div>
-                                    <ChevronRight size={20} className="text-neutral-700 group-hover:text-cyan-500 group-hover:tranneutral-x-1 transition-all" />
-                                </div>
-                            </Link>
-                        ))}
-                        {revisionsData.content.length === 0 && (
-                            <div className="text-center text-neutral-500 p-8">No revisions found.</div>
-                        )}
-                    </div>
-                </div>
-
-                {(revisionsData?.page?.totalPages || revisionsData?.totalPages) > 0 && (
-                    <div className="flex justify-center items-center gap-4 mt-8 pb-8">
-                        <button
-                            onClick={() => setPage(p => Math.max(0, p - 1))}
-                            disabled={revisionsData.first ?? (revisionsData?.page?.number === 0)}
-                            className={`px-4 py-2 rounded-lg font-medium transition-colors ${(revisionsData.first ?? (revisionsData?.page?.number === 0)) ? 'bg-neutral-800 text-neutral-500 cursor-not-allowed' : 'bg-gradient-to-r from-cyan-600 to-cyan-500 hover:from-cyan-500 hover:to-cyan-400 text-white'
-                                }`}
-                        >
-                            Previous
-                        </button>
-                        <span className="text-neutral-400 font-mono text-sm">
-                            Page {(revisionsData?.page?.number ?? revisionsData.number) + 1} of {revisionsData?.page?.totalPages ?? revisionsData.totalPages}
-                        </span>
-                        <button
-                            onClick={() => setPage(p => p + 1)}
-                            disabled={revisionsData.last ?? (revisionsData?.page?.number + 1 >= (revisionsData?.page?.totalPages ?? revisionsData.totalPages))}
-                            className={`px-4 py-2 rounded-lg font-medium transition-colors ${(revisionsData.last ?? (revisionsData?.page?.number + 1 >= (revisionsData?.page?.totalPages ?? revisionsData.totalPages))) ? 'bg-neutral-800 text-neutral-500 cursor-not-allowed' : 'bg-gradient-to-r from-cyan-600 to-cyan-500 hover:from-cyan-500 hover:to-cyan-400 text-white'
-                                }`}
-                        >
-                            Next
-                        </button>
-                    </div>
-                )}
-            </div>
-        </div>
-    )
-}
 
 

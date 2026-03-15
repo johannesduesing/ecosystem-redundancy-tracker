@@ -13,11 +13,14 @@ import java.util.List;
 
 @Entity
 @Table(
-    name = "class_file",
-    uniqueConstraints = @UniqueConstraint(name = "uq_class_file_fqn_sha512", columnNames = {"fqn", "sha512"}),
-    indexes = @jakarta.persistence.Index(name = "idx_class_file_release_count", columnList = "release_count")
+    name = "project_file",
+    uniqueConstraints = @UniqueConstraint(name = "uq_project_file_fqn_sha512", columnNames = {"fqn", "sha512"}),
+    indexes = {
+        @jakarta.persistence.Index(name = "idx_project_file_release_count", columnList = "release_count"),
+        @jakarta.persistence.Index(name = "idx_project_file_is_code", columnList = "is_code")
+    }
 )
-public class ClassFile {
+public class ProjectFile {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -25,6 +28,12 @@ public class ClassFile {
 
     @Column(nullable = false, length = 4096)
     private String fqn;
+
+    @Column(name = "file_type", nullable = false)
+    private String fileType;
+
+    @Column(name = "is_code", nullable = false)
+    private boolean isCode;
 
     @Column(nullable = false, length = 128)
     private String sha512;
@@ -36,10 +45,10 @@ public class ClassFile {
     private long releaseCount = 0;
 
     @JsonIgnore
-    @ManyToMany(mappedBy = "classFiles")
+    @ManyToMany(mappedBy = "files")
     private List<Release> releases;
 
-    public ClassFile() {
+    public ProjectFile() {
     }
 
     public Long getId() {
@@ -56,6 +65,22 @@ public class ClassFile {
 
     public void setFqn(String fqn) {
         this.fqn = fqn;
+    }
+
+    public String getFileType() {
+        return fileType;
+    }
+
+    public void setFileType(String fileType) {
+        this.fileType = fileType;
+    }
+
+    public boolean isCode() {
+        return isCode;
+    }
+
+    public void setCode(boolean code) {
+        isCode = code;
     }
 
     public String getSha512() {

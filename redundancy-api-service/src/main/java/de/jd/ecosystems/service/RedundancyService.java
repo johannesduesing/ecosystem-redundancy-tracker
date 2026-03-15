@@ -5,10 +5,10 @@ import de.jd.ecosystems.messages.ReleaseAnalysisRequest;
 import de.jd.ecosystems.model.Component;
 import de.jd.ecosystems.model.ProcessingStatus;
 import de.jd.ecosystems.model.Release;
-import de.jd.ecosystems.model.ClassFile;
+import de.jd.ecosystems.model.ProjectFile;
 import de.jd.ecosystems.repository.ComponentRepository;
 import de.jd.ecosystems.repository.ReleaseRepository;
-import de.jd.ecosystems.repository.ClassFileRepository;
+import de.jd.ecosystems.repository.ProjectFileRepository;
 import de.jd.ecosystems.dto.ClassDiffDTO;
 import de.jd.ecosystems.dto.ReleaseDiffDTO;
 import de.jd.ecosystems.dto.ReleaseHistoryPointDTO;
@@ -33,18 +33,18 @@ public class RedundancyService {
 
     private final ComponentRepository componentRepository;
     private final ReleaseRepository releaseRepository;
-    private final ClassFileRepository classFileRepository;
+    private final ProjectFileRepository projectFileRepository;
     private final RabbitTemplate rabbitTemplate;
     private final org.springframework.transaction.support.TransactionTemplate transactionTemplate;
 
     public RedundancyService(ComponentRepository componentRepository,
             ReleaseRepository releaseRepository,
-            ClassFileRepository classFileRepository,
+            ProjectFileRepository projectFileRepository,
             RabbitTemplate rabbitTemplate,
             org.springframework.transaction.support.TransactionTemplate transactionTemplate) {
         this.componentRepository = componentRepository;
         this.releaseRepository = releaseRepository;
-        this.classFileRepository = classFileRepository;
+        this.projectFileRepository = projectFileRepository;
         this.rabbitTemplate = rabbitTemplate;
         this.transactionTemplate = transactionTemplate;
     }
@@ -182,32 +182,32 @@ public class RedundancyService {
     }
 
     @Transactional(readOnly = true)
-    public Page<Release> getReleasesForClass(Long classFileId, Pageable pageable) {
-        return releaseRepository.findByClassFilesId(classFileId, pageable);
+    public Page<Release> getReleasesForFile(Long fileId, Pageable pageable) {
+        return releaseRepository.findByFilesId(fileId, pageable);
     }
 
     @Transactional(readOnly = true)
-    public Optional<ClassFile> getClassFileById(Long id) {
-        return classFileRepository.findById(id);
+    public Optional<ProjectFile> getFileById(Long id) {
+        return projectFileRepository.findById(id);
     }
 
     @Transactional(readOnly = true)
-    public List<Release> getClassOccurrences(String fqn) {
-        // Find ALL class files with this FQN, and collect all their releases
-        List<ClassFile> classFiles = classFileRepository.findByFqn(fqn, Pageable.unpaged()).getContent();
-        if (classFiles.isEmpty()) {
+    public List<Release> getFileOccurrences(String fqn) {
+        // Find ALL files with this FQN, and collect all their releases
+        List<ProjectFile> files = projectFileRepository.findByFqn(fqn, Pageable.unpaged()).getContent();
+        if (files.isEmpty()) {
             return List.of();
         }
-        return classFiles.stream().flatMap(cf -> cf.getReleases().stream()).collect(Collectors.toList());
+        return files.stream().flatMap(pf -> pf.getReleases().stream()).collect(Collectors.toList());
     }
 
     @Transactional(readOnly = true)
-    public Page<ClassFile> getClassRevisions(String fqn, Pageable pageable) {
-        return classFileRepository.findByFqn(fqn, pageable);
+    public Page<ProjectFile> getFileRevisions(String fqn, Pageable pageable) {
+        return projectFileRepository.findByFqn(fqn, pageable);
     }
 
     @Transactional(readOnly = true)
-    public ReleaseDiffDTO getReleaseDiff(String groupId, String artifactId, String version, String baseVersion) {
+    public ReleaseDiffDTO getReleaseDiff(String groupId, String artifactId, String version, String baseVersion, boolean codeOnly) {
         Component component = componentRepository.findByGroupIdAndArtifactId(groupId, artifactId)
                 .orElseThrow(() -> new IllegalArgumentException("Component not found"));
 
@@ -241,8 +241,14 @@ public class RedundancyService {
         ReleaseDiffDTO diff = new ReleaseDiffDTO();
         diff.setVersion(version);
         diff.setPreviousVersion(previousVersion);
-        diff.setTotalClasses(currentRelease.getClassFiles().size());
-        diff.setTotalSizeBytes(currentRelease.getClassFiles().stream().mapToLong(ClassFile::getSizeBytes).sum());
+
+        List<ProjectFile> currentFiles = currentRelease.getFiles();
+        if (codeOnly) {
+            currentFiles = currentFiles.stream().filter(ProjectFile::isCode).collect(Collectors.toList());
+        }
+
+        diff.setTotalClasses(currentFiles.size());
+        diff.setTotalSizeBytes(currentFiles.stream().mapToLong(ProjectFile::getSizeBytes).sum());
         diff.setAdded(new ArrayList<>());
         diff.setAddedSizeBytes(0);
         diff.setRemoved(new ArrayList<>());
@@ -250,36 +256,41 @@ public class RedundancyService {
         diff.setModified(new ArrayList<>());
         diff.setModifiedSizeBytes(0);
 
-        Map<String, ClassFile> currentClasses = currentRelease.getClassFiles().stream()
-                .collect(Collectors.toMap(ClassFile::getFqn, cf -> cf));
+        Map<String, ProjectFile> currentFilesMap = currentFiles.stream()
+                .collect(Collectors.toMap(ProjectFile::getFqn, pf -> pf));
 
         if (previousRelease == null) {
-            // All classes are "added" if it's the first release or no baseline found
-            currentClasses.forEach((fqn, cf) -> {
-                diff.getAdded().add(new ClassDiffDTO(cf.getId(), fqn, cf.getSha512(), cf.getSizeBytes()));
-                diff.setAddedSizeBytes(diff.getAddedSizeBytes() + cf.getSizeBytes());
+            // All files are "added" if it's the first release or no baseline found
+            currentFilesMap.forEach((fqn, pf) -> {
+                diff.getAdded().add(new ClassDiffDTO(pf.getId(), fqn, pf.getSha512(), pf.getSizeBytes()));
+                diff.setAddedSizeBytes(diff.getAddedSizeBytes() + pf.getSizeBytes());
             });
         } else {
-            Map<String, ClassFile> previousClasses = previousRelease.getClassFiles().stream()
-                    .collect(Collectors.toMap(ClassFile::getFqn, cf -> cf));
+            List<ProjectFile> previousFiles = previousRelease.getFiles();
+            if (codeOnly) {
+                previousFiles = previousFiles.stream().filter(ProjectFile::isCode).collect(Collectors.toList());
+            }
+            
+            Map<String, ProjectFile> previousFilesMap = previousFiles.stream()
+                    .collect(Collectors.toMap(ProjectFile::getFqn, pf -> pf));
 
             // Added: In current, not in previous
-            currentClasses.forEach((fqn, cf) -> {
-                if (!previousClasses.containsKey(fqn)) {
-                    diff.getAdded().add(new ClassDiffDTO(cf.getId(), fqn, cf.getSha512(), cf.getSizeBytes()));
-                    diff.setAddedSizeBytes(diff.getAddedSizeBytes() + cf.getSizeBytes());
-                } else if (!previousClasses.get(fqn).getSha512().equals(cf.getSha512())) {
+            currentFilesMap.forEach((fqn, pf) -> {
+                if (!previousFilesMap.containsKey(fqn)) {
+                    diff.getAdded().add(new ClassDiffDTO(pf.getId(), fqn, pf.getSha512(), pf.getSizeBytes()));
+                    diff.setAddedSizeBytes(diff.getAddedSizeBytes() + pf.getSizeBytes());
+                } else if (!previousFilesMap.get(fqn).getSha512().equals(pf.getSha512())) {
                     // Modified: In both, but different hash
-                    diff.getModified().add(new ClassDiffDTO(cf.getId(), fqn, cf.getSha512(), cf.getSizeBytes()));
-                    diff.setModifiedSizeBytes(diff.getModifiedSizeBytes() + cf.getSizeBytes());
+                    diff.getModified().add(new ClassDiffDTO(pf.getId(), fqn, pf.getSha512(), pf.getSizeBytes()));
+                    diff.setModifiedSizeBytes(diff.getModifiedSizeBytes() + pf.getSizeBytes());
                 }
             });
 
             // Removed: In previous, not in current
-            previousClasses.forEach((fqn, cf) -> {
-                if (!currentClasses.containsKey(fqn)) {
-                    diff.getRemoved().add(new ClassDiffDTO(cf.getId(), fqn, cf.getSha512(), cf.getSizeBytes()));
-                    diff.setRemovedSizeBytes(diff.getRemovedSizeBytes() + cf.getSizeBytes());
+            previousFilesMap.forEach((fqn, pf) -> {
+                if (!currentFilesMap.containsKey(fqn)) {
+                    diff.getRemoved().add(new ClassDiffDTO(pf.getId(), fqn, pf.getSha512(), pf.getSizeBytes()));
+                    diff.setRemovedSizeBytes(diff.getRemovedSizeBytes() + pf.getSizeBytes());
                 }
             });
         }
@@ -315,12 +326,12 @@ public class RedundancyService {
     }
 
     @Transactional(readOnly = true)
-    public List<ClassFile> getTopClassFiles() {
-        return classFileRepository.findTop10ByReleaseCount(PageRequest.of(0, 10));
+    public List<ProjectFile> getTopFiles() {
+        return projectFileRepository.findTop10ByReleaseCount(PageRequest.of(0, 10));
     }
 
     @Transactional(readOnly = true)
-    public List<ReleaseHistoryPointDTO> getComponentHistory(String groupId, String artifactId) {
+    public List<ReleaseHistoryPointDTO> getComponentHistory(String groupId, String artifactId, boolean codeOnly) {
         Component component = componentRepository.findByGroupIdAndArtifactId(groupId, artifactId)
                 .orElseThrow(() -> new IllegalArgumentException("Component not found"));
 
@@ -342,15 +353,25 @@ public class RedundancyService {
             int added = 0;
             int removed = 0;
             int modified = 0;
-            int total = currentRelease.getClassFiles().size();
+            
+            List<ProjectFile> currentFiles = currentRelease.getFiles();
+            if (codeOnly) {
+                currentFiles = currentFiles.stream().filter(ProjectFile::isCode).collect(Collectors.toList());
+            }
+            int total = currentFiles.size();
 
             if (previousRelease == null) {
                 added = total;
             } else {
-                Map<String, String> currentMap = currentRelease.getClassFiles().stream()
-                        .collect(Collectors.toMap(ClassFile::getFqn, ClassFile::getSha512));
-                Map<String, String> previousMap = previousRelease.getClassFiles().stream()
-                        .collect(Collectors.toMap(ClassFile::getFqn, ClassFile::getSha512));
+                List<ProjectFile> previousFiles = previousRelease.getFiles();
+                if (codeOnly) {
+                    previousFiles = previousFiles.stream().filter(ProjectFile::isCode).collect(Collectors.toList());
+                }
+
+                Map<String, String> currentMap = currentFiles.stream()
+                        .collect(Collectors.toMap(ProjectFile::getFqn, ProjectFile::getSha512));
+                Map<String, String> previousMap = previousFiles.stream()
+                        .collect(Collectors.toMap(ProjectFile::getFqn, ProjectFile::getSha512));
 
                 for (Map.Entry<String, String> entry : currentMap.entrySet()) {
                     String fqn = entry.getKey();
@@ -377,9 +398,9 @@ public class RedundancyService {
     public GlobalStatsDTO getGlobalStats() {
         long components = componentRepository.count();
         long releases = releaseRepository.count();
-        long uniqueClasses = classFileRepository.count();
+        long uniqueFiles = projectFileRepository.count();
         long occurrences = releaseRepository.countFileOccurrences();
         
-        return new GlobalStatsDTO(components, releases, uniqueClasses, occurrences);
+        return new GlobalStatsDTO(components, releases, uniqueFiles, occurrences);
     }
 }

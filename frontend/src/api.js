@@ -23,13 +23,13 @@ export const fetchComponentRedundancy = async (groupId, artifactId) => {
     return response.data
 }
 
-export const fetchComponentHistory = async (groupId, artifactId) => {
-    const response = await api.get(`/redundancy/${groupId}/${artifactId}/history`)
+export const fetchComponentHistory = async (groupId, artifactId, codeOnly = true) => {
+    const response = await api.get(`/redundancy/${groupId}/${artifactId}/history`, { params: { codeOnly } })
     return response.data
 }
 
-export const fetchReleaseDiff = async (groupId, artifactId, version, baseVersion = null) => {
-    const params = {}
+export const fetchReleaseDiff = async (groupId, artifactId, version, baseVersion = null, codeOnly = true) => {
+    const params = { codeOnly }
     if (baseVersion) {
         params.baseVersion = baseVersion
     }
@@ -37,23 +37,23 @@ export const fetchReleaseDiff = async (groupId, artifactId, version, baseVersion
     return response.data
 }
 
-export const fetchReleasesForClass = async (id, page = 0, size = 10) => {
-    const response = await api.get(`/classes/${id}/releases`, { params: { page, size } })
+export const fetchReleasesForFile = async (id, page = 0, size = 10) => {
+    const response = await api.get(`/files/${id}/releases`, { params: { page, size } })
     return response.data
 }
 
-export const fetchClassDetails = async (id) => {
-    const response = await api.get(`/classes/${id}`)
+export const fetchFileDetails = async (id) => {
+    const response = await api.get(`/files/${id}`)
     return response.data
 }
 
-export const fetchClassRevisions = async (fqn, page = 0, size = 30, sort = 'releaseCount,desc') => {
-    const response = await api.get(`/classes/revisions`, { params: { fqn, page, size, sort } })
+export const fetchFileRevisions = async (fqn, page = 0, size = 30, sort = 'releaseCount,desc') => {
+    const response = await api.get(`/files/revisions`, { params: { fqn, page, size, sort } })
     return response.data
 }
 
-export const fetchTopClasses = async () => {
-    const response = await api.get('/top-classes')
+export const fetchTopFiles = async () => {
+    const response = await api.get('/top-files')
     return response.data
 }
 

@@ -40,9 +40,9 @@ public class RedundancyController {
         return ResponseEntity.ok(exists);
     }
 
-    @GetMapping("/top-classes")
-    public ResponseEntity<List<de.jd.ecosystems.model.ClassFile>> getTopClasses() {
-        return ResponseEntity.ok(service.getTopClassFiles());
+    @GetMapping("/top-files")
+    public ResponseEntity<List<de.jd.ecosystems.model.ProjectFile>> getTopFiles() {
+        return ResponseEntity.ok(service.getTopFiles());
     }
 
     @GetMapping("/redundancy/{groupId}/{artifactId}")
@@ -66,8 +66,9 @@ public class RedundancyController {
 
     @GetMapping("/redundancy/{groupId}/{artifactId}/history")
     public ResponseEntity<List<ReleaseHistoryPointDTO>> getComponentHistory(@PathVariable("groupId") String groupId,
-                                                                            @PathVariable("artifactId") String artifactId) {
-        return ResponseEntity.ok(service.getComponentHistory(groupId, artifactId));
+                                                                            @PathVariable("artifactId") String artifactId,
+                                                                            @RequestParam(defaultValue = "true") boolean codeOnly) {
+        return ResponseEntity.ok(service.getComponentHistory(groupId, artifactId, codeOnly));
     }
 
     @GetMapping("/releases/{groupId}/{artifactId}/{version}/changes")
@@ -85,35 +86,33 @@ public class RedundancyController {
         return ResponseEntity.ok(service.getRelease(groupId, artifactId, version).orElseThrow());
     }
 
-    @GetMapping("/classes/{fqn:.+}/occurrences")
-    public ResponseEntity<?> getClassOccurrences(@PathVariable("fqn") String fqn) {
-        // This is a direct lookup. If the class exists, we return occurrences.
-        // We might want to "search" for it if not found, but for now let's assume valid
-        // lookup.
-        return ResponseEntity.ok(service.getClassOccurrences(fqn));
+    @GetMapping("/files/{fqn:.+}/occurrences")
+    public ResponseEntity<?> getFileOccurrences(@PathVariable("fqn") String fqn) {
+        return ResponseEntity.ok(service.getFileOccurrences(fqn));
     }
 
     @GetMapping("/releases/{groupId}/{artifactId}/{version}/diff")
     public ResponseEntity<ReleaseDiffDTO> getReleaseDiff(@PathVariable("groupId") String groupId,
             @PathVariable("artifactId") String artifactId,
             @PathVariable("version") String version,
-            @RequestParam(required = false) String baseVersion) {
-        return ResponseEntity.ok(service.getReleaseDiff(groupId, artifactId, version, baseVersion));
+            @RequestParam(required = false) String baseVersion,
+            @RequestParam(defaultValue = "true") boolean codeOnly) {
+        return ResponseEntity.ok(service.getReleaseDiff(groupId, artifactId, version, baseVersion, codeOnly));
     }
 
-    @GetMapping("/classes/revisions")
-    public ResponseEntity<?> getClassRevisions(@RequestParam("fqn") String fqn, Pageable pageable) {
-        return ResponseEntity.ok(service.getClassRevisions(fqn, pageable));
+    @GetMapping("/files/revisions")
+    public ResponseEntity<?> getFileRevisions(@RequestParam("fqn") String fqn, Pageable pageable) {
+        return ResponseEntity.ok(service.getFileRevisions(fqn, pageable));
     }
 
-    @GetMapping("/classes/{id}/releases")
-    public ResponseEntity<?> getReleasesByClassId(@PathVariable("id") Long id, Pageable pageable) {
-        return ResponseEntity.ok(service.getReleasesForClass(id, pageable));
+    @GetMapping("/files/{id}/releases")
+    public ResponseEntity<?> getReleasesByFileId(@PathVariable("id") Long id, Pageable pageable) {
+        return ResponseEntity.ok(service.getReleasesForFile(id, pageable));
     }
 
-    @GetMapping("/classes/{id}")
-    public ResponseEntity<de.jd.ecosystems.model.ClassFile> getClassFile(@PathVariable("id") Long id) {
-        return service.getClassFileById(id)
+    @GetMapping("/files/{id}")
+    public ResponseEntity<de.jd.ecosystems.model.ProjectFile> getProjectFile(@PathVariable("id") Long id) {
+        return service.getFileById(id)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }
