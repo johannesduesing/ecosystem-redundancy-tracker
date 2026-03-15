@@ -3,6 +3,7 @@ package de.jd.ecosystems.controller;
 import de.jd.ecosystems.model.ProcessingStatus;
 import de.jd.ecosystems.service.RedundancyService;
 import de.jd.ecosystems.dto.ReleaseDiffDTO;
+import de.jd.ecosystems.dto.ReleaseHistoryPointDTO;
 import org.springframework.http.ResponseEntity;
 import java.util.Optional;
 import org.springframework.data.domain.Pageable;
@@ -56,6 +57,12 @@ public class RedundancyController {
         }
 
         return ResponseEntity.ok(service.getComponent(groupId, artifactId).orElseThrow());
+    }
+
+    @GetMapping("/redundancy/{groupId}/{artifactId}/history")
+    public ResponseEntity<List<ReleaseHistoryPointDTO>> getComponentHistory(@PathVariable("groupId") String groupId,
+                                                                            @PathVariable("artifactId") String artifactId) {
+        return ResponseEntity.ok(service.getComponentHistory(groupId, artifactId));
     }
 
     @GetMapping("/releases/{groupId}/{artifactId}/{version}/changes")

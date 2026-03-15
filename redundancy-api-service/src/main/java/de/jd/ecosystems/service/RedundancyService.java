@@ -11,6 +11,7 @@ import de.jd.ecosystems.repository.ReleaseRepository;
 import de.jd.ecosystems.repository.ClassFileRepository;
 import de.jd.ecosystems.dto.ClassDiffDTO;
 import de.jd.ecosystems.dto.ReleaseDiffDTO;
+import de.jd.ecosystems.dto.ReleaseHistoryPointDTO;
 import de.jd.ecosystems.dto.ComponentListDTO;
 import de.jd.ecosystems.util.VersionUtils;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
@@ -315,5 +316,59 @@ public class RedundancyService {
     @Transactional(readOnly = true)
     public List<ClassFile> getTopClassFiles() {
         return classFileRepository.findTop10ByReleaseCount(PageRequest.of(0, 10));
+    }
+
+    @Transactional(readOnly = true)
+    public List<ReleaseHistoryPointDTO> getComponentHistory(String groupId, String artifactId) {
+        Component component = componentRepository.findByGroupIdAndArtifactId(groupId, artifactId)
+                .orElseThrow(() -> new IllegalArgumentException("Component not found"));
+
+        List<Release> allReleases = releaseRepository.findByComponent(component).stream()
+                .filter(r -> r.getStatus() == ProcessingStatus.READY)
+                .collect(Collectors.toList());
+
+        List<String> sortedVersions = VersionUtils.sortVersions(
+                allReleases.stream().map(Release::getVersion).collect(Collectors.toList()));
+
+        List<ReleaseHistoryPointDTO> history = new ArrayList<>();
+        Release previousRelease = null;
+
+        for (String version : sortedVersions) {
+            String finalVersion = version;
+            Release currentRelease = allReleases.stream()
+                    .filter(r -> r.getVersion().equals(finalVersion)).findFirst().get();
+
+            int added = 0;
+            int removed = 0;
+            int modified = 0;
+            int total = currentRelease.getClassFiles().size();
+
+            if (previousRelease == null) {
+                added = total;
+            } else {
+                Map<String, String> currentMap = currentRelease.getClassFiles().stream()
+                        .collect(Collectors.toMap(ClassFile::getFqn, ClassFile::getSha512));
+                Map<String, String> previousMap = previousRelease.getClassFiles().stream()
+                        .collect(Collectors.toMap(ClassFile::getFqn, ClassFile::getSha512));
+
+                for (Map.Entry<String, String> entry : currentMap.entrySet()) {
+                    String fqn = entry.getKey();
+                    String hash = entry.getValue();
+                    if (!previousMap.containsKey(fqn)) {
+                        added++;
+                    } else if (!previousMap.get(fqn).equals(hash)) {
+                        modified++;
+                    }
+                }
+                for (String fqn : previousMap.keySet()) {
+                    if (!currentMap.containsKey(fqn)) {
+                        removed++;
+                    }
+                }
+            }
+            history.add(new ReleaseHistoryPointDTO(version, added, removed, modified, total));
+            previousRelease = currentRelease;
+        }
+        return history;
     }
 }

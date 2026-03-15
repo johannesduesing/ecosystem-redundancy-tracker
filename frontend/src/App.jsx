@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { Routes, Route, Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { Search, Home, CheckCircle2, Clock, XCircle, AlertCircle, ChevronRight, FileCode, Loader2 } from 'lucide-react'
+import { Search, Home, CheckCircle2, Clock, XCircle, AlertCircle, ChevronRight, FileCode, Loader2, BarChart3 } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
-import { fetchComponents, fetchComponentRedundancy, fetchReleaseDiff, fetchReleasesForClass, fetchTopClasses, fetchClassDetails, fetchClassRevisions, checkComponentExists } from './api'
+import { motion, AnimatePresence } from 'framer-motion'
+import { fetchComponents, fetchComponentRedundancy, fetchReleaseDiff, fetchReleasesForClass, fetchTopClasses, fetchClassDetails, fetchClassRevisions, checkComponentExists, fetchComponentHistory } from './api'
 
 const formatBytes = (bytes) => {
     if (!bytes || bytes <= 0) return '0 KB'
@@ -62,8 +63,8 @@ function FqnSearchBar() {
                     className="bg-neutral-900 border border-neutral-800 rounded-full py-1.5 pl-4 pr-10 text-sm focus:outline-none focus:ring-2 ring-cyan-500/50 w-64 transition-all"
                     disabled={loading}
                 />
-                <button 
-                    type="submit" 
+                <button
+                    type="submit"
                     className="absolute right-2 text-neutral-500 hover:text-cyan-400 p-1 transition-colors"
                     disabled={loading}
                 >
@@ -149,7 +150,7 @@ function HomePage() {
             return
         }
         const [groupId, artifactId] = parts.map(p => p.trim())
-        
+
         setVerifying(true)
         try {
             const exists = await checkComponentExists(groupId, artifactId)
@@ -236,7 +237,7 @@ function HomePage() {
                                     <StatusBadge status={comp.status} />
                                 </div>
                                 <div className="flex justify-end items-center text-sm w-full">
-                                    <ChevronRight className="text-neutral-700 group-hover:text-cyan-500 group-hover:tranneutral-x-1 transition-all" size={20} />
+                                    <ChevronRight className="text-neutral-700 group-hover:text-cyan-500 group-hover:translate-x-1 transition-all" size={20} />
                                 </div>
                             </div>
                         </Link>
@@ -286,10 +287,133 @@ function TopClassesList() {
                     <div className="flex-1 min-w-0">
                         <p className="text-sm font-mono text-neutral-300 group-hover:text-cyan-400 truncate">{formatFqn(cf.fqn)}</p>
                     </div>
-                    <ChevronRight size={20} className="text-neutral-700 group-hover:text-cyan-500 group-hover:tranneutral-x-1 transition-all flex-shrink-0 ml-4" />
+                    <ChevronRight size={20} className="text-neutral-700 group-hover:text-cyan-500 group-hover:translate-x-1 transition-all flex-shrink-0 ml-4" />
                 </Link>
             ))}
         </div>
+    )
+}
+
+function LifetimeChart({ data }) {
+    if (!data || data.length === 0) return null
+
+    const margin = { top: 20, right: 30, bottom: 30, left: 50 }
+    const width = 1200
+    const height = 180
+    const innerWidth = width - margin.left - margin.right
+    const innerHeight = height - margin.top - margin.bottom
+
+    const maxValue = Math.max(...data.map(d => Math.max(d.addedCount, d.removedCount, d.modifiedCount, d.totalCount))) || 1
+
+    // Total classes line will be thin neutral, others colored
+    const xScale = (i) => (i / (data.length - 1 || 1)) * innerWidth
+    const yScale = (v) => innerHeight - (v / maxValue) * innerHeight
+
+    const createPath = (key) => {
+        return data.map((d, i) => `${i === 0 ? 'M' : 'L'} ${xScale(i)} ${yScale(d[key])}`).join(' ')
+    }
+
+    return (
+        <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="glass-panel p-4 overflow-hidden border-cyan-500/10"
+        >
+            <div className="relative w-full">
+                <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-auto overflow-visible">
+                    <g transform={`translate(${margin.left}, ${margin.top})`}>
+                        {/* Grid Lines */}
+                        {[0, 0.25, 0.5, 0.75, 1].map(v => (
+                            <line
+                                key={v}
+                                x1={0} y1={innerHeight * v} x2={innerWidth} y2={innerHeight * v}
+                                className="stroke-white opacity-[0.1]" strokeWidth="1"
+                            />
+                        ))}
+
+                        {/* Total Classes Line */}
+                        <motion.path
+                            initial={{ pathLength: 0 }}
+                            animate={{ pathLength: 1 }}
+                            transition={{ duration: 2, ease: "easeInOut" }}
+                            d={createPath('totalCount')}
+                            fill="none"
+                            stroke="rgba(163, 163, 163, 0.3)"
+                            strokeWidth="2"
+                            strokeDasharray="4 2"
+                        />
+
+                        {/* Added Classes Line */}
+                        <motion.path
+                            initial={{ pathLength: 0 }}
+                            animate={{ pathLength: 1 }}
+                            transition={{ duration: 1.5, delay: 0.2, ease: "easeInOut" }}
+                            d={createPath('addedCount')}
+                            fill="none"
+                            stroke="#22c55e"
+                            strokeWidth="3"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                        />
+
+                        {/* Modified Classes Line */}
+                        <motion.path
+                            initial={{ pathLength: 0 }}
+                            animate={{ pathLength: 1 }}
+                            transition={{ duration: 1.5, delay: 0.4, ease: "easeInOut" }}
+                            d={createPath('modifiedCount')}
+                            fill="none"
+                            stroke="#eab308"
+                            strokeWidth="3"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                        />
+
+                        {/* Removed Classes Line */}
+                        <motion.path
+                            initial={{ pathLength: 0 }}
+                            animate={{ pathLength: 1 }}
+                            transition={{ duration: 1.5, delay: 0.6, ease: "easeInOut" }}
+                            d={createPath('removedCount')}
+                            fill="none"
+                            stroke="#ef4444"
+                            strokeWidth="3"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                        />
+
+                        {/* Points and Tooltips */}
+                        {data.map((d, i) => (
+                            <g key={i}>
+                                <circle
+                                    cx={xScale(i)}
+                                    cy={yScale(d.totalCount)}
+                                    r="3"
+                                    className="fill-neutral-500 hover:fill-neutral-300 transition-colors cursor-pointer"
+                                >
+                                    <title>{d.version}: {d.totalCount} total classes</title>
+                                </circle>
+                                {data.length < 30 && (
+                                    <text
+                                        x={xScale(i)}
+                                        y={innerHeight + 20}
+                                        textAnchor="middle"
+                                        className="fill-neutral-600 text-[8px] font-mono"
+                                    >
+                                        {d.version.length > 8 ? d.version.substring(0, 6) + '..' : d.version}
+                                    </text>
+                                )}
+                            </g>
+                        ))}
+                    </g>
+                </svg>
+            </div>
+            <div className="flex justify-center gap-6 mt-4 text-[8px] uppercase tracking-widest font-bold opacity-60">
+                <div className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-green-500" /> Classes Added</div>
+                <div className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-yellow-500" /> Classes Modified</div>
+                <div className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-red-500" /> Classes Removed</div>
+            </div>
+        </motion.div>
     )
 }
 
@@ -298,6 +422,20 @@ function ComponentPage() {
     const [searchParams] = useSearchParams()
     const [selectedVersion, setSelectedVersion] = useState(searchParams.get('version') || null)
     const [baselineVersion, setBaselineVersion] = useState(null)
+    const [historyData, setHistoryData] = useState(null)
+    const [loadingHistory, setLoadingHistory] = useState(false)
+
+    const handleGenerateHistory = async () => {
+        setLoadingHistory(true)
+        try {
+            const data = await fetchComponentHistory(groupId, artifactId)
+            setHistoryData(data)
+        } catch (err) {
+            console.error("Failed to load history:", err)
+        } finally {
+            setLoadingHistory(false)
+        }
+    }
 
     const { data: component, isLoading: compLoading, error: compError } = useQuery({
         queryKey: ['component', groupId, artifactId],
@@ -351,29 +489,43 @@ function ComponentPage() {
 
     return (
         <div className="space-y-8">
-            <div className="flex flex-col md:flex-row justify-between items-start gap-6">
-                <div className="space-y-2">
-                    <p className="text-cyan-500 font-mono text-sm">{groupId}</p>
-                    <h1 className="text-4xl font-extrabold">{artifactId}</h1>
-                    <div className="flex items-center gap-4 text-neutral-400">
-                        <StatusBadge status={component.status} />
+            <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-8 pb-8 border-b border-neutral-800">
+                <div className="space-y-4 flex-1">
+                    <div className="space-y-1">
+                        <p className="text-cyan-500 font-mono text-xs">{groupId}</p>
+                        <h1 className="text-4xl font-black tracking-tight">{artifactId}</h1>
                     </div>
-                    {hasPendingReleases && (
-                        <div className="flex items-center gap-2 text-amber-400 bg-amber-400/10 border border-amber-400/30 rounded-lg px-4 py-2 text-sm mt-2">
-                            <Loader2 className="animate-spin flex-shrink-0" size={15} />
-                            Currently being indexed &mdash; some releases may not yet be available
-                        </div>
-                    )}
+                    <div className="flex flex-wrap items-center gap-3">
+                        <StatusBadge status={component.status} />
+                        {!historyData && !loadingHistory ? (
+                            <button
+                                onClick={handleGenerateHistory}
+                                className="flex items-center gap-2 bg-neutral-900 hover:bg-neutral-800 text-cyan-400 px-3 py-1.5 rounded-full text-[10px] font-bold transition-all border border-cyan-500/20 hover:border-cyan-500/50"
+                            >
+                                <BarChart3 size={12} /> Generate Lifetime Overview
+                            </button>
+                        ) : loadingHistory ? (
+                            <div className="flex items-center gap-2 text-neutral-500 text-[10px] font-bold px-3 py-1.5">
+                                <Loader2 className="animate-spin text-cyan-500" size={12} /> Analyzing history...
+                            </div>
+                        ) : null}
+                    </div>
                 </div>
+
+                {historyData && !loadingHistory && (
+                    <div className="w-full max-w-6xl">
+                        <LifetimeChart data={historyData} />
+                    </div>
+                )}
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
                 <div className="lg:col-span-1 space-y-4">
-                    <h2 className="text-xl font-bold flex items-center gap-2">
-                        <Clock className="text-cyan-500" size={20} /> Releases
+                    <h2 className="text-lg font-bold flex items-center gap-2 opacity-80">
+                        <Clock className="text-cyan-500" size={18} /> Releases
                     </h2>
                     <div className="glass-panel overflow-hidden">
-                        <div className="max-h-[600px] overflow-y-auto divide-y divide-neutral-800">
+                        <div className="max-h-[600px] overflow-y-auto divide-y divide-neutral-800 custom-scrollbar">
                             {[...(component.releases ?? [])].sort((a, b) => (a.status === 'READY' ? -1 : 1) - (b.status === 'READY' ? -1 : 1)).map((rel) => {
                                 const isReady = rel.status === 'READY'
                                 const isSelected = selectedVersion === rel.version
@@ -384,20 +536,18 @@ function ComponentPage() {
                                             setSelectedVersion(rel.version)
                                             setBaselineVersion(null)
                                         }}
-                                        className={`w-full text-left p-4 transition-colors flex items-center justify-between group ${
-                                            isSelected
-                                                ? isReady
-                                                    ? 'bg-cyan-500/10 border-r-2 border-cyan-500'
-                                                    : 'bg-amber-500/5 border-r-2 border-amber-500/50'
-                                                : 'hover:bg-neutral-900'
-                                        }`}
+                                        className={`w-full text-left p-4 transition-colors flex items-center justify-between group ${isSelected
+                                            ? isReady
+                                                ? 'bg-cyan-500/10 border-r-2 border-cyan-500'
+                                                : 'bg-amber-500/5 border-r-2 border-amber-500/50'
+                                            : 'hover:bg-neutral-900'
+                                            }`}
                                     >
                                         <div className="flex flex-col gap-0.5">
-                                            <span className={`font-mono text-sm transition-colors ${
-                                                isReady
-                                                    ? 'font-bold group-hover:text-cyan-400'
-                                                    : 'line-through text-neutral-500'
-                                            }`}>
+                                            <span className={`font-mono text-sm transition-colors ${isReady
+                                                ? 'font-bold group-hover:text-cyan-400'
+                                                : 'line-through text-neutral-500'
+                                                }`}>
                                                 {rel.version}
                                             </span>
                                             {!isReady && (
@@ -405,7 +555,7 @@ function ComponentPage() {
                                             )}
                                         </div>
                                         {isReady
-                                            ? <ChevronRight size={16} className={`text-neutral-600 group-hover:text-cyan-500 transition-all ${isSelected ? 'tranneutral-x-1' : ''}`} />
+                                            ? <ChevronRight size={16} className={`text-neutral-600 group-hover:text-cyan-500 transition-all ${isSelected ? 'translate-x-1' : ''}`} />
                                             : <Clock size={14} className="text-amber-500/50 flex-shrink-0" />
                                         }
                                     </button>
@@ -415,7 +565,7 @@ function ComponentPage() {
                     </div>
                 </div>
 
-                <div className="lg:col-span-2 space-y-4">
+                <div className="lg:col-span-3 space-y-4">
                     <h2 className="text-xl font-bold flex items-center justify-between w-full">
                         <div className="flex items-center gap-2">
                             <FileCode className="text-cyan-500" size={20} /> Release Investigation
@@ -423,7 +573,7 @@ function ComponentPage() {
                         {selectedVersion && selectedIsReady && (
                             <div className="flex items-center gap-2 text-xs font-normal">
                                 <span className="text-neutral-500">Compare against:</span>
-                                <select 
+                                <select
                                     value={baselineVersion || diff?.previousVersion || ''}
                                     onChange={(e) => setBaselineVersion(e.target.value)}
                                     className="bg-neutral-900 border border-neutral-800 rounded px-2 py-1 text-neutral-300 focus:outline-none focus:ring-1 ring-cyan-500/50"
@@ -464,40 +614,40 @@ function ComponentPage() {
                     ) : diff ? (
                         <div className="space-y-6">
                             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-                                <MetricCard 
-                                    label="Total Classes" 
-                                    value={diff.totalClasses || 0} 
-                                    color="text-cyan-500" 
+                                <MetricCard
+                                    label="Total Classes"
+                                    value={diff.totalClasses || 0}
+                                    color="text-cyan-500"
                                     subValue={formatBytes(diff.totalSizeBytes)}
                                 />
-                                <MetricCard 
-                                    label="Added" 
-                                    value={diff.added?.length || 0} 
-                                    color="text-green-500" 
+                                <MetricCard
+                                    label="Added"
+                                    value={diff.added?.length || 0}
+                                    color="text-green-500"
                                     quota={diff.totalSizeBytes > 0 ? (diff.addedSizeBytes / diff.totalSizeBytes * 100).toFixed(1) : 0}
                                     quotaLabel="Addition Quota"
                                     subValue={formatBytes(diff.addedSizeBytes)}
                                 />
-                                <MetricCard 
-                                    label="Modified" 
-                                    value={diff.modified?.length || 0} 
-                                    color="text-yellow-500" 
+                                <MetricCard
+                                    label="Modified"
+                                    value={diff.modified?.length || 0}
+                                    color="text-yellow-500"
                                     quota={diff.totalSizeBytes > 0 ? (diff.modifiedSizeBytes / diff.totalSizeBytes * 100).toFixed(1) : 0}
                                     quotaLabel="Modification Quota"
                                     subValue={formatBytes(diff.modifiedSizeBytes)}
                                 />
-                                <MetricCard 
-                                    label="Unmodified" 
-                                    value={(diff.totalClasses || 0) - (diff.added?.length || 0) - (diff.modified?.length || 0)} 
-                                    color="text-neutral-300" 
+                                <MetricCard
+                                    label="Unmodified"
+                                    value={(diff.totalClasses || 0) - (diff.added?.length || 0) - (diff.modified?.length || 0)}
+                                    color="text-neutral-300"
                                     quota={diff.totalSizeBytes > 0 ? ((diff.totalSizeBytes - diff.addedSizeBytes - diff.modifiedSizeBytes) / diff.totalSizeBytes * 100).toFixed(1) : 0}
                                     quotaLabel="Unmodified Quota"
                                     subValue={formatBytes(diff.totalSizeBytes - diff.addedSizeBytes - diff.modifiedSizeBytes)}
                                 />
-                                <MetricCard 
-                                    label="Removed" 
-                                    value={diff.removed?.length || 0} 
-                                    color="text-red-500" 
+                                <MetricCard
+                                    label="Removed"
+                                    value={diff.removed?.length || 0}
+                                    color="text-red-500"
                                     subValue={formatBytes(diff.removedSizeBytes)}
                                 />
                             </div>
@@ -567,21 +717,21 @@ function QuotaBar({ diff }) {
 
     return (
         <div className="w-full h-8 flex rounded-md overflow-hidden bg-neutral-900 border border-neutral-800 shadow-inner">
-            <div 
+            <div
                 className="h-full bg-green-500 transition-all duration-500 relative group"
                 style={{ width: `${addedPct}%` }}
                 title={`Added: ${addedPct.toFixed(1)}%`}
             >
                 {addedPct > 10 && <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-neutral-950 uppercase">Added</span>}
             </div>
-            <div 
+            <div
                 className="h-full bg-yellow-500 transition-all duration-500 relative group"
                 style={{ width: `${modifiedPct}%` }}
                 title={`Modified: ${modifiedPct.toFixed(1)}%`}
             >
                 {modifiedPct > 10 && <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-neutral-950 uppercase">Modified</span>}
             </div>
-            <div 
+            <div
                 className="h-full bg-neutral-400 transition-all duration-500 relative group"
                 style={{ width: `${unmodifiedPct}%` }}
                 title={`Unmodified: ${unmodifiedPct.toFixed(1)}%`}
@@ -624,19 +774,19 @@ function ClassPage() {
                         <FileCode size={24} />
                         <span className="font-bold uppercase tracking-widest text-sm">Class Investigation</span>
                     </div>
-                    
+
                     <div className="flex flex-col sm:flex-row justify-between items-start gap-4 mb-6">
                         <h1 className="text-2xl font-bold break-all font-mono">
                             {formatFqn(classDetails.fqn)}
                         </h1>
-                        <Link 
+                        <Link
                             to={`/class/fqn/${encodeURIComponent(classDetails.fqn)}`}
                             className="bg-neutral-800 hover:bg-neutral-700 text-neutral-300 px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 flex-shrink-0"
                         >
                             All Revisions <ChevronRight size={16} />
                         </Link>
                     </div>
-                    
+
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                         <div className="bg-neutral-900/50 rounded-lg p-4 border border-neutral-800">
                             <p className="text-neutral-500 text-xs uppercase tracking-wider font-semibold mb-1">File Size</p>
@@ -687,9 +837,8 @@ function ClassPage() {
                         <button
                             onClick={() => setPage(p => Math.max(0, p - 1))}
                             disabled={releasesData.first ?? (releasesData?.page?.number === 0)}
-                            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                                (releasesData.first ?? (releasesData?.page?.number === 0)) ? 'bg-neutral-800 text-neutral-500 cursor-not-allowed' : 'bg-gradient-to-r from-cyan-600 to-cyan-500 hover:from-cyan-500 hover:to-cyan-400 text-white'
-                            }`}
+                            className={`px-4 py-2 rounded-lg font-medium transition-colors ${(releasesData.first ?? (releasesData?.page?.number === 0)) ? 'bg-neutral-800 text-neutral-500 cursor-not-allowed' : 'bg-gradient-to-r from-cyan-600 to-cyan-500 hover:from-cyan-500 hover:to-cyan-400 text-white'
+                                }`}
                         >
                             Previous
                         </button>
@@ -699,9 +848,8 @@ function ClassPage() {
                         <button
                             onClick={() => setPage(p => p + 1)}
                             disabled={releasesData.last ?? (releasesData?.page?.number + 1 >= (releasesData?.page?.totalPages ?? releasesData.totalPages))}
-                            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                                (releasesData.last ?? (releasesData?.page?.number + 1 >= (releasesData?.page?.totalPages ?? releasesData.totalPages))) ? 'bg-neutral-800 text-neutral-500 cursor-not-allowed' : 'bg-gradient-to-r from-cyan-600 to-cyan-500 hover:from-cyan-500 hover:to-cyan-400 text-white'
-                            }`}
+                            className={`px-4 py-2 rounded-lg font-medium transition-colors ${(releasesData.last ?? (releasesData?.page?.number + 1 >= (releasesData?.page?.totalPages ?? releasesData.totalPages))) ? 'bg-neutral-800 text-neutral-500 cursor-not-allowed' : 'bg-gradient-to-r from-cyan-600 to-cyan-500 hover:from-cyan-500 hover:to-cyan-400 text-white'
+                                }`}
                         >
                             Next
                         </button>
@@ -831,9 +979,8 @@ function ClassFqnPage() {
                         <button
                             onClick={() => setPage(p => Math.max(0, p - 1))}
                             disabled={revisionsData.first ?? (revisionsData?.page?.number === 0)}
-                            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                                (revisionsData.first ?? (revisionsData?.page?.number === 0)) ? 'bg-neutral-800 text-neutral-500 cursor-not-allowed' : 'bg-gradient-to-r from-cyan-600 to-cyan-500 hover:from-cyan-500 hover:to-cyan-400 text-white'
-                            }`}
+                            className={`px-4 py-2 rounded-lg font-medium transition-colors ${(revisionsData.first ?? (revisionsData?.page?.number === 0)) ? 'bg-neutral-800 text-neutral-500 cursor-not-allowed' : 'bg-gradient-to-r from-cyan-600 to-cyan-500 hover:from-cyan-500 hover:to-cyan-400 text-white'
+                                }`}
                         >
                             Previous
                         </button>
@@ -843,9 +990,8 @@ function ClassFqnPage() {
                         <button
                             onClick={() => setPage(p => p + 1)}
                             disabled={revisionsData.last ?? (revisionsData?.page?.number + 1 >= (revisionsData?.page?.totalPages ?? revisionsData.totalPages))}
-                            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                                (revisionsData.last ?? (revisionsData?.page?.number + 1 >= (revisionsData?.page?.totalPages ?? revisionsData.totalPages))) ? 'bg-neutral-800 text-neutral-500 cursor-not-allowed' : 'bg-gradient-to-r from-cyan-600 to-cyan-500 hover:from-cyan-500 hover:to-cyan-400 text-white'
-                            }`}
+                            className={`px-4 py-2 rounded-lg font-medium transition-colors ${(revisionsData.last ?? (revisionsData?.page?.number + 1 >= (revisionsData?.page?.totalPages ?? revisionsData.totalPages))) ? 'bg-neutral-800 text-neutral-500 cursor-not-allowed' : 'bg-gradient-to-r from-cyan-600 to-cyan-500 hover:from-cyan-500 hover:to-cyan-400 text-white'
+                                }`}
                         >
                             Next
                         </button>

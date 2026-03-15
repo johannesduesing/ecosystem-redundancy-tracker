@@ -23,6 +23,11 @@ export const fetchComponentRedundancy = async (groupId, artifactId) => {
     return response.data
 }
 
+export const fetchComponentHistory = async (groupId, artifactId) => {
+    const response = await api.get(`/redundancy/${groupId}/${artifactId}/history`)
+    return response.data
+}
+
 export const fetchReleaseDiff = async (groupId, artifactId, version, baseVersion = null) => {
     const params = {}
     if (baseVersion) {
