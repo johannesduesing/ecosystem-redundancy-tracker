@@ -66,4 +66,9 @@ export const checkComponentExists = async (groupId, artifactId) => {
     }
 }
 
+export const fetchGlobalStats = async () => {
+    const response = await api.get('/redundancy/stats')
+    return response.data
+}
+
 export default api

@@ -59,6 +59,11 @@ public class RedundancyController {
         return ResponseEntity.ok(service.getComponent(groupId, artifactId).orElseThrow());
     }
 
+    @GetMapping("/redundancy/stats")
+    public ResponseEntity<de.jd.ecosystems.dto.GlobalStatsDTO> getGlobalStats() {
+        return ResponseEntity.ok(service.getGlobalStats());
+    }
+
     @GetMapping("/redundancy/{groupId}/{artifactId}/history")
     public ResponseEntity<List<ReleaseHistoryPointDTO>> getComponentHistory(@PathVariable("groupId") String groupId,
                                                                             @PathVariable("artifactId") String artifactId) {

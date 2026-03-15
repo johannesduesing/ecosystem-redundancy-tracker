@@ -14,4 +14,7 @@ public interface ReleaseRepository extends JpaRepository<Release, Long> {
     List<Release> findByComponent(Component component);
 
     Page<Release> findByClassFilesId(Long classFileId, Pageable pageable);
+
+    @org.springframework.data.jpa.repository.Query(value = "SELECT COUNT(*) FROM release_class_files", nativeQuery = true)
+    long countFileOccurrences();
 }

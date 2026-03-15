@@ -8,6 +8,7 @@ import de.jd.ecosystems.model.Release;
 import de.jd.ecosystems.producer.client.MavenMetadataClient;
 import de.jd.ecosystems.producer.repository.ComponentRepository;
 import de.jd.ecosystems.producer.repository.ReleaseRepository;
+import de.jd.ecosystems.util.DatabaseSizeGuard;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.stereotype.Service;
@@ -26,21 +27,31 @@ public class ProducerService {
     private final ReleaseRepository releaseRepository;
     private final RabbitTemplate rabbitTemplate;
     private final org.springframework.transaction.support.TransactionTemplate transactionTemplate;
+    private final DatabaseSizeGuard sizeGuard;
+
+    private static final long DB_SIZE_LIMIT = 25 * 1024 * 1024 * 1024L; // 25 GB
 
     public ProducerService(MavenMetadataClient metadataClient,
             ComponentRepository componentRepository,
             ReleaseRepository releaseRepository,
             RabbitTemplate rabbitTemplate,
-            org.springframework.transaction.support.TransactionTemplate transactionTemplate) {
+            org.springframework.transaction.support.TransactionTemplate transactionTemplate,
+            DatabaseSizeGuard sizeGuard) {
         this.metadataClient = metadataClient;
         this.componentRepository = componentRepository;
         this.releaseRepository = releaseRepository;
         this.rabbitTemplate = rabbitTemplate;
         this.transactionTemplate = transactionTemplate;
+        this.sizeGuard = sizeGuard;
     }
 
     @RabbitListener(queues = "maven-central-component-analysis")
     public void processComponent(ComponentAnalysisRequest request) {
+        if (sizeGuard.isLimitExceeded(DB_SIZE_LIMIT)) {
+            System.err.println("Skipping component processing due to DB size limit: " + request.getGroupId() + ":" + request.getArtifactId());
+            return;
+        }
+
         String groupId = request.getGroupId();
         String artifactId = request.getArtifactId();
 

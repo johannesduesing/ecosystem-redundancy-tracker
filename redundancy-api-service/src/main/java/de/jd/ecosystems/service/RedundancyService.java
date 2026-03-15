@@ -13,6 +13,7 @@ import de.jd.ecosystems.dto.ClassDiffDTO;
 import de.jd.ecosystems.dto.ReleaseDiffDTO;
 import de.jd.ecosystems.dto.ReleaseHistoryPointDTO;
 import de.jd.ecosystems.dto.ComponentListDTO;
+import de.jd.ecosystems.dto.GlobalStatsDTO;
 import de.jd.ecosystems.util.VersionUtils;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.data.domain.Page;
@@ -370,5 +371,15 @@ public class RedundancyService {
             previousRelease = currentRelease;
         }
         return history;
+    }
+
+    @Transactional(readOnly = true)
+    public GlobalStatsDTO getGlobalStats() {
+        long components = componentRepository.count();
+        long releases = releaseRepository.count();
+        long uniqueClasses = classFileRepository.count();
+        long occurrences = releaseRepository.countFileOccurrences();
+        
+        return new GlobalStatsDTO(components, releases, uniqueClasses, occurrences);
     }
 }

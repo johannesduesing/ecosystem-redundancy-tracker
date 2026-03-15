@@ -1,9 +1,9 @@
 import { useState, useRef } from 'react'
 import { Routes, Route, Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { Search, Home, CheckCircle2, Clock, XCircle, AlertCircle, ChevronRight, FileCode, Loader2, BarChart3 } from 'lucide-react'
+import { Search, Home, CheckCircle2, Clock, XCircle, AlertCircle, ChevronRight, FileCode, Loader2, BarChart3, FileX, Package, History, Layers, Zap, RefreshCcw } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { motion, AnimatePresence } from 'framer-motion'
-import { fetchComponents, fetchComponentRedundancy, fetchReleaseDiff, fetchReleasesForClass, fetchTopClasses, fetchClassDetails, fetchClassRevisions, checkComponentExists, fetchComponentHistory } from './api'
+import { fetchComponents, fetchComponentRedundancy, fetchReleaseDiff, fetchReleasesForClass, fetchTopClasses, fetchClassDetails, fetchClassRevisions, checkComponentExists, fetchComponentHistory, fetchGlobalStats } from './api'
 
 const formatBytes = (bytes) => {
     if (!bytes || bytes <= 0) return '0 KB'
@@ -16,6 +16,12 @@ const formatBytes = (bytes) => {
 const formatFqn = (fqn) => {
     if (!fqn) return ''
     return fqn.endsWith('.class') ? fqn.slice(0, -6) : fqn
+}
+
+const formatNumber = (num) => {
+    if (typeof num !== 'number') return num
+    if (num < 1000) return num.toString()
+    return (num / 1000).toFixed(1) + 'K'
 }
 
 function FqnSearchBar() {
@@ -141,6 +147,12 @@ function HomePage() {
         refetchInterval: 5000,
     })
 
+    const { data: stats, isLoading: statsLoading } = useQuery({
+        queryKey: ['global-stats'],
+        queryFn: fetchGlobalStats,
+        refetchInterval: 10000,
+    })
+
     const handleSearch = async (e) => {
         e.preventDefault()
         const parts = search.split(':')
@@ -200,6 +212,48 @@ function HomePage() {
                         </div>
                     )}
                 </form>
+            </section>
+
+            <section className="space-y-8 py-4">
+                <div className="flex items-center justify-between">
+                    <h2 className="text-xl font-black flex items-center gap-3">
+                        <Zap className="text-cyan-500" size={20} /> Index Insights
+                    </h2>
+                    {statsLoading && <Loader2 className="animate-spin text-neutral-500" size={14} />}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
+                    <MetricCard
+                        label="Components"
+                        value={stats?.totalComponents ?? 0}
+                        color="text-cyan-400"
+                        icon={Package}
+                    />
+                    <MetricCard
+                        label="Releases"
+                        value={stats?.totalReleases ?? 0}
+                        color="text-fuchsia-400"
+                        icon={History}
+                    />
+                    <MetricCard
+                        label="Unique Classes"
+                        value={stats?.totalUniqueClassFiles ?? 0}
+                        color="text-blue-400"
+                        icon={Layers}
+                    />
+                    <MetricCard
+                        label="File Occurrences"
+                        value={stats?.totalFileOccurrences ?? 0}
+                        color="text-emerald-400"
+                        icon={FileCode}
+                    />
+                    <MetricCard
+                        label="Redundancy Coefficient"
+                        value={(stats?.totalUniqueClassFiles > 0 ? (stats.totalFileOccurrences / stats.totalUniqueClassFiles).toFixed(1) : '0.0') + 'x'}
+                        color="text-amber-400"
+                        icon={RefreshCcw}
+                    />
+                </div>
             </section>
 
             <section className="space-y-6">
@@ -677,15 +731,29 @@ function ComponentPage() {
                             <p>Select a version from the left to investigate changes and redundancy.</p>
                         </div>
                     ) : !selectedIsReady ? (
-                        <div className="glass-panel p-16 flex flex-col items-center gap-5 text-center border border-amber-500/20">
-                            <Loader2 className="animate-spin text-amber-400" size={40} />
-                            <div className="space-y-2">
-                                <h3 className="font-bold text-lg">Not yet available</h3>
-                                <p className="text-neutral-400 text-sm max-w-xs">
-                                    Release <span className="font-mono text-neutral-300">{selectedVersion}</span> is currently being indexed.
-                                    Check back shortly once indexing is complete.
-                                </p>
-                            </div>
+                        <div className={`glass-panel p-16 flex flex-col items-center gap-5 text-center border ${selectedRelease?.status === 'NOT_FOUND' ? 'border-red-500/20' : 'border-amber-500/20'}`}>
+                            {selectedRelease?.status === 'NOT_FOUND' ? (
+                                <>
+                                    <FileX className="text-red-500" size={48} />
+                                    <div className="space-y-2">
+                                        <h3 className="font-bold text-lg">No JAR Associated</h3>
+                                        <p className="text-neutral-400 text-sm max-w-xs">
+                                            Release <span className="font-mono text-neutral-300">{selectedVersion}</span> has no JAR file associated on Maven Central.
+                                        </p>
+                                    </div>
+                                </>
+                            ) : (
+                                <>
+                                    <Loader2 className="animate-spin text-amber-400" size={40} />
+                                    <div className="space-y-2">
+                                        <h3 className="font-bold text-lg">Not yet available</h3>
+                                        <p className="text-neutral-400 text-sm max-w-xs">
+                                            Release <span className="font-mono text-neutral-300">{selectedVersion}</span> is currently being indexed.
+                                            Check back shortly once indexing is complete.
+                                        </p>
+                                    </div>
+                                </>
+                            )}
                             <StatusBadge status={selectedRelease?.status} />
                         </div>
                     ) : diffLoading ? (
@@ -694,6 +762,17 @@ function ComponentPage() {
                             Calculating diff...
                         </div>
                     ) : diff ? (
+                        diff.totalClasses === 0 ? (
+                            <div className="glass-panel p-24 text-center text-neutral-500 flex flex-col items-center gap-4">
+                                <FileX className="text-neutral-600" size={48} />
+                                <div className="space-y-2">
+                                    <h3 className="font-bold text-lg">Empty Release</h3>
+                                    <p className="text-neutral-400 text-sm max-w-xs">
+                                        This release contains no class files to analyze.
+                                    </p>
+                                </div>
+                            </div>
+                        ) : (
                         <div className="space-y-6">
                             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
                                 <MetricCard
@@ -742,6 +821,7 @@ function ComponentPage() {
                                 <DiffSection title="Removed Classes" classes={diff.removed} color="bg-red-500" />
                             </div>
                         </div>
+                        )
                     ) : null}
                 </div>
             </div>
@@ -772,11 +852,20 @@ function DiffSection({ title, classes, color }) {
     )
 }
 
-function MetricCard({ label, value, color, quota, quotaLabel, subValue }) {
+function MetricCard({ label, value, color, quota, quotaLabel, subValue, icon: Icon }) {
     return (
-        <div className="glass-panel p-4 text-center group">
-            <p className="text-neutral-500 text-[10px] uppercase tracking-wider font-semibold mb-1">{label}</p>
-            <p className={`text-3xl font-bold ${color}`}>{value}</p>
+        <div className="glass-panel p-5 relative overflow-hidden group transition-all hover:bg-neutral-900/50">
+            {Icon && (
+                <div className="absolute -right-2 -top-2 opacity-[0.03] group-hover:opacity-[0.07] transition-opacity pointer-events-none">
+                    <Icon size={84} strokeWidth={1} />
+                </div>
+            )}
+            <div className="relative flex flex-col gap-1">
+                <div className="flex items-center justify-between mb-1">
+                    <span className="text-[10px] font-bold text-neutral-500 uppercase tracking-wider">{label}</span>
+                    {Icon && <Icon className={color} size={14} opacity={0.5} />}
+                </div>
+            <p className={`text-3xl font-bold ${color}`}>{formatNumber(value)}</p>
             {subValue && (
                 <p className="text-[10px] text-neutral-400 mt-1 font-mono">{subValue}</p>
             )}
@@ -786,6 +875,7 @@ function MetricCard({ label, value, color, quota, quotaLabel, subValue }) {
                     <p className="text-sm font-mono text-neutral-300">{quota}%</p>
                 </div>
             )}
+            </div>
         </div>
     )
 }
