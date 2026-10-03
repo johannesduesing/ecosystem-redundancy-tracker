@@ -194,7 +194,7 @@ public class RedundancyService {
     @Transactional(readOnly = true)
     public List<Release> getFileOccurrences(String fqn) {
         // Find ALL files with this FQN, and collect all their releases
-        List<ProjectFile> files = projectFileRepository.findByFqn(fqn, Pageable.unpaged()).getContent();
+        List<ProjectFile> files = findByFqnTolerant(fqn, Pageable.unpaged()).getContent();
         if (files.isEmpty()) {
             return List.of();
         }
@@ -203,7 +203,52 @@ public class RedundancyService {
 
     @Transactional(readOnly = true)
     public Page<ProjectFile> getFileRevisions(String fqn, Pageable pageable) {
-        return projectFileRepository.findByFqn(fqn, pageable);
+        return findByFqnTolerant(fqn, pageable);
+    }
+
+    /**
+     * Finds files by FQN, tolerating the notation users actually type.
+     * Files are stored under their raw JAR entry name (e.g.
+     * {@code org/apache/commons/lang3/StringUtils.class}), but users search with
+     * dot notation and often omit the {@code .class} suffix. Exact match is tried
+     * first; on a miss, normalized candidates are tried in order.
+     */
+    private Page<ProjectFile> findByFqnTolerant(String fqn, Pageable pageable) {
+        Page<ProjectFile> page = projectFileRepository.findByFqn(fqn, pageable);
+        if (!page.isEmpty()) {
+            return page;
+        }
+        for (String candidate : fqnCandidates(fqn)) {
+            if (candidate.equals(fqn)) {
+                continue;
+            }
+            Page<ProjectFile> alternative = projectFileRepository.findByFqn(candidate, pageable);
+            if (!alternative.isEmpty()) {
+                return alternative;
+            }
+        }
+        return page;
+    }
+
+    private static List<String> fqnCandidates(String fqn) {
+        String input = fqn == null ? "" : fqn.trim();
+        List<String> candidates = new ArrayList<>();
+        if (input.contains("/")) {
+            // Already in storage form; also try the dot-notation equivalent.
+            candidates.add(input.replace('/', '.'));
+            return candidates;
+        }
+        if (input.endsWith(".class")) {
+            String base = input.substring(0, input.length() - ".class".length());
+            candidates.add(base);
+            candidates.add(base.replace('.', '/') + ".class");
+            candidates.add(base.replace('.', '/'));
+        } else {
+            candidates.add(input + ".class");
+            candidates.add(input.replace('.', '/'));
+            candidates.add(input.replace('.', '/') + ".class");
+        }
+        return candidates;
     }
 
     @Transactional(readOnly = true)

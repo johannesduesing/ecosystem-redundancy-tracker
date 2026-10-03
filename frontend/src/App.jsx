@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react'
 import { Routes, Route, Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { Search, Home, CheckCircle2, Clock, XCircle, AlertCircle, ChevronRight, FileCode, Loader2, BarChart3, FileX, Package, History, Layers, Zap, RefreshCcw } from 'lucide-react'
-import { useQuery } from '@tanstack/react-query'
+import { Search, Home, CheckCircle2, Clock, XCircle, AlertCircle, ChevronRight, ChevronDown, FileCode, Loader2, BarChart3, FileX, Package, History, Layers, Zap, RefreshCcw } from 'lucide-react'
+import { useQuery, keepPreviousData } from '@tanstack/react-query'
 import { motion, AnimatePresence } from 'framer-motion'
 import { fetchComponents, fetchComponentRedundancy, fetchReleaseDiff, fetchReleasesForFile, fetchTopFiles, fetchFileDetails, fetchFileRevisions, checkComponentExists, fetchComponentHistory, fetchGlobalStats } from './api'
 
@@ -15,7 +15,9 @@ const formatBytes = (bytes) => {
 
 const formatFqn = (fqn) => {
     if (!fqn) return ''
-    return fqn.endsWith('.class') ? fqn.slice(0, -6) : fqn
+    // Backend stores raw JAR entry names (org/apache/.../Foo.class); display dot notation.
+    const dotted = fqn.replace(/\//g, '.')
+    return dotted.endsWith('.class') ? dotted.slice(0, -6) : dotted
 }
 
 const formatNumber = (num) => {
@@ -559,21 +561,24 @@ function ComponentPage() {
     const [searchParams] = useSearchParams()
     const [selectedVersion, setSelectedVersion] = useState(searchParams.get('version') || null)
     const [baselineVersion, setBaselineVersion] = useState(null)
-    const [historyData, setHistoryData] = useState(null)
-    const [loadingHistory, setLoadingHistory] = useState(false)
+    const [showHistory, setShowHistory] = useState(false)
     const [codeOnly, setCodeOnly] = useState(true)
 
-    const handleGenerateHistory = async () => {
-        setLoadingHistory(true)
-        try {
-            const data = await fetchComponentHistory(groupId, artifactId, codeOnly)
-            setHistoryData(data)
-        } catch (err) {
-            console.error("Failed to load history:", err)
-        } finally {
-            setLoadingHistory(false)
-        }
-    }
+    // Lifetime overview: cached per view mode, refetches automatically when
+    // codeOnly changes once generated. Previous data stays visible while reloading.
+    const {
+        data: historyData,
+        isPending: historyPending,
+        isFetching: historyFetching,
+        isError: historyError,
+        refetch: refetchHistory,
+    } = useQuery({
+        queryKey: ['history', groupId, artifactId, codeOnly],
+        queryFn: () => fetchComponentHistory(groupId, artifactId, codeOnly),
+        enabled: showHistory,
+        placeholderData: keepPreviousData,
+        staleTime: 60000,
+    })
 
     const { data: component, isLoading: compLoading, error: compError } = useQuery({
         queryKey: ['component', groupId, artifactId],
@@ -635,52 +640,91 @@ function ComponentPage() {
                     </div>
                     <div className="flex flex-wrap items-center gap-3">
                         <StatusBadge status={component.status} />
-                        {!historyData && !loadingHistory ? (
-                            <button
-                                onClick={handleGenerateHistory}
-                                className="flex items-center gap-2 bg-neutral-900 hover:bg-neutral-800 text-cyan-400 px-3 py-1.5 rounded-full text-[10px] font-bold transition-all border border-cyan-500/20 hover:border-cyan-500/50"
-                            >
-                                <BarChart3 size={12} /> Generate Lifetime Overview
-                            </button>
-                        ) : loadingHistory ? (
-                            <div className="flex items-center gap-2 text-neutral-500 text-[10px] font-bold px-3 py-1.5">
-                                <Loader2 className="animate-spin text-cyan-500" size={12} /> Analyzing history...
+                        <button
+                            onClick={() => setShowHistory((v) => !v)}
+                            aria-expanded={showHistory}
+                            className="flex items-center gap-2 bg-neutral-900 hover:bg-neutral-800 text-cyan-400 px-3 py-1.5 rounded-full text-[10px] font-bold transition-all border border-cyan-500/20 hover:border-cyan-500/50"
+                        >
+                            <BarChart3 size={12} /> Lifetime Overview
+                            <ChevronDown size={12} className={`transition-transform duration-300 ${showHistory ? 'rotate-180' : ''}`} />
+                        </button>
+                        {hasPendingReleases && (
+                            <div className="flex items-center gap-2 text-[10px] font-black uppercase text-amber-500 bg-amber-500/10 px-3 py-1.5 rounded-full border border-amber-500/20">
+                                <Loader2 size={10} className="animate-spin" /> Some releases indexing...
                             </div>
-                        ) : null}
+                        )}
                     </div>
                 </div>
 
-                {historyData && !loadingHistory && (
-                    <div className="space-y-4 flex-1">
-                        <LifetimeChart data={historyData} />
-                    </div>
-                )}
-            </div>
-
-            <div className="flex items-center justify-between glass-panel p-4">
                 <div className="flex items-center gap-4 text-sm">
                     <span className="font-bold text-neutral-400">View Mode:</span>
                     <div className="flex bg-neutral-900 rounded-lg p-1 border border-neutral-800">
                         <button
-                            onClick={() => { setCodeOnly(true); setHistoryData(null); }}
+                            onClick={() => setCodeOnly(true)}
                             className={`px-4 py-1.5 rounded-md transition-all font-bold ${codeOnly ? 'bg-cyan-500 text-neutral-950 shadow-lg shadow-cyan-500/20' : 'text-neutral-500 hover:text-neutral-300'}`}
                         >
                             Code Only
                         </button>
                         <button
-                            onClick={() => { setCodeOnly(false); setHistoryData(null); }}
+                            onClick={() => setCodeOnly(false)}
                             className={`px-4 py-1.5 rounded-md transition-all font-bold ${!codeOnly ? 'bg-fuchsia-500 text-neutral-950 shadow-lg shadow-fuchsia-500/20' : 'text-neutral-500 hover:text-neutral-300'}`}
                         >
                             All Files
                         </button>
                     </div>
                 </div>
-                {hasPendingReleases && (
-                    <div className="flex items-center gap-2 text-[10px] font-black uppercase text-amber-500 bg-amber-500/10 px-3 py-1.5 rounded-full border border-amber-500/20">
-                        <Loader2 size={10} className="animate-spin" /> Some releases indexing...
-                    </div>
-                )}
             </div>
+
+            <AnimatePresence initial={false}>
+                {showHistory && (
+                    <motion.section
+                        key="lifetime-overview"
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.3, ease: 'easeInOut' }}
+                        className="overflow-hidden"
+                    >
+                        <div className="space-y-4 pb-1">
+                            <div className="flex items-center gap-3">
+                                <h2 className="text-lg font-bold flex items-center gap-2 opacity-80">
+                                    <BarChart3 className="text-cyan-500" size={18} /> Lifetime Overview
+                                </h2>
+                                {historyFetching ? (
+                                    <span className="flex items-center gap-1.5 text-[10px] font-bold text-neutral-500">
+                                        <Loader2 size={10} className="animate-spin text-cyan-500" /> Updating...
+                                    </span>
+                                ) : (
+                                    <button
+                                        onClick={() => refetchHistory()}
+                                        title="Refresh lifetime overview"
+                                        className="flex items-center gap-1 text-[10px] font-bold text-neutral-500 hover:text-cyan-400 transition-colors"
+                                    >
+                                        <RefreshCcw size={10} /> Refresh
+                                    </button>
+                                )}
+                            </div>
+                            {historyPending ? (
+                                <div className="glass-panel p-4 min-h-[280px] flex items-center justify-center text-neutral-500">
+                                    <Loader2 className="animate-spin mr-2 text-cyan-500" size={20} /> Analyzing release history...
+                                </div>
+                            ) : historyError ? (
+                                <div className="glass-panel p-8 text-center text-neutral-500">
+                                    <AlertCircle className="mx-auto mb-2 text-red-500" size={24} />
+                                    <p>Could not load the lifetime overview.</p>
+                                    <button onClick={() => refetchHistory()} className="mt-3 text-cyan-500 hover:underline text-sm font-bold">
+                                        Try again
+                                    </button>
+                                </div>
+                            ) : (
+                                <div className={historyFetching ? 'opacity-60 transition-opacity pointer-events-none' : 'transition-opacity'}>
+                                    <LifetimeChart data={historyData} />
+                                </div>
+                            )}
+                        </div>
+                    </motion.section>
+                )}
+            </AnimatePresence>
 
             <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
                 <div className="lg:col-span-1 space-y-4">
