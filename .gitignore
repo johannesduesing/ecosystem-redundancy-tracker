@@ -98,3 +98,4 @@ pnpm-debug.log*
 .eslintcache
 .stylelintcache
 .prettiercache
+.metals/

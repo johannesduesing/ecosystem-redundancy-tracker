@@ -45,8 +45,8 @@ public class Release {
 
     @JsonIgnore
     @ManyToMany
-    @JoinTable(name = "release_class_files", joinColumns = @JoinColumn(name = "release_id"), inverseJoinColumns = @JoinColumn(name = "class_file_id"))
-    private List<ClassFile> classFiles;
+    @JoinTable(name = "release_files", joinColumns = @JoinColumn(name = "release_id"), inverseJoinColumns = @JoinColumn(name = "file_id"))
+    private List<ProjectFile> files;
 
     public Release() {
     }
@@ -91,11 +91,11 @@ public class Release {
         this.component = component;
     }
 
-    public List<ClassFile> getClassFiles() {
-        return classFiles;
+    public List<ProjectFile> getFiles() {
+        return files;
     }
 
-    public void setClassFiles(List<ClassFile> classFiles) {
-        this.classFiles = classFiles;
+    public void setFiles(List<ProjectFile> files) {
+        this.files = files;
     }
 }

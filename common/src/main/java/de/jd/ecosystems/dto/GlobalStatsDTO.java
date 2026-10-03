@@ -3,16 +3,16 @@ package de.jd.ecosystems.dto;
 public class GlobalStatsDTO {
     private long totalComponents;
     private long totalReleases;
-    private long totalUniqueClassFiles;
+    private long totalUniqueFiles;
     private long totalFileOccurrences;
 
     public GlobalStatsDTO() {
     }
 
-    public GlobalStatsDTO(long totalComponents, long totalReleases, long totalUniqueClassFiles, long totalFileOccurrences) {
+    public GlobalStatsDTO(long totalComponents, long totalReleases, long totalUniqueFiles, long totalFileOccurrences) {
         this.totalComponents = totalComponents;
         this.totalReleases = totalReleases;
-        this.totalUniqueClassFiles = totalUniqueClassFiles;
+        this.totalUniqueFiles = totalUniqueFiles;
         this.totalFileOccurrences = totalFileOccurrences;
     }
 
@@ -32,12 +32,12 @@ public class GlobalStatsDTO {
         this.totalReleases = totalReleases;
     }
 
-    public long getTotalUniqueClassFiles() {
-        return totalUniqueClassFiles;
+    public long getTotalUniqueFiles() {
+        return totalUniqueFiles;
     }
 
-    public void setTotalUniqueClassFiles(long totalUniqueClassFiles) {
-        this.totalUniqueClassFiles = totalUniqueClassFiles;
+    public void setTotalUniqueFiles(long totalUniqueFiles) {
+        this.totalUniqueFiles = totalUniqueFiles;
     }
 
     public long getTotalFileOccurrences() {
